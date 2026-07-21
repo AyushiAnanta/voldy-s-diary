@@ -21,6 +21,28 @@ function App() {
   const [activeTool, setActiveTool] = useState("pen");
   const [reasoning, setReasoning] = useState("medium");
   const [status, setStatus] = useState("ready");
+  const [errorMessage, setErrorMessage] = useState(null);
+
+  const errorTimeoutRef = useRef(null);
+
+  // Custom function to show graceful on-screen toast messages instead of browser alerts
+  const showError = (msg) => {
+    setErrorMessage(msg);
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+    }
+    errorTimeoutRef.current = setTimeout(() => {
+      setErrorMessage(null);
+    }, 6000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Keep statusRef in sync with status state
   useEffect(() => {
@@ -68,10 +90,9 @@ function App() {
   const handleTriggerAI = async () => {
     if (status !== "ready") return;
 
-    // 1. Get base64 cropped visual asset and coordinate metadata from Canvas component ref
     const cropData = canvasRef.current.captureCrop();
     if (!cropData || !cropData.image) {
-      alert("Please write or draw something on the canvas first!");
+      showError("Please write or draw something on the canvas first!");
       return;
     }
 
@@ -147,14 +168,14 @@ function App() {
 
         setDrafts(prev => [...prev, ...newDrafts]);
       } else {
-        alert("Gemini returned no commands. Try writing a clearer prompt.");
+        showError("Gemini returned no commands. Try writing a clearer prompt.");
       }
 
       setStatus("ready");
 
     } catch (error) {
       console.error("Gemini AI request failed:", error);
-      alert(`AI Error: ${error.message}`);
+      showError(`AI Error: ${error.message}`);
       setStatus("ready");
     }
   };
@@ -220,6 +241,49 @@ function App() {
           </select>
         </div>
       </header>
+
+      {/* Graceful Toast notification banner (replaces window.alert) */}
+      {errorMessage && (
+        <div className="toast-notification chrome-container" style={{
+          position: "fixed",
+          top: "96px",
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 10000,
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+          padding: "12px 20px",
+          background: "rgba(239, 68, 68, 0.15)",
+          border: "1px solid rgba(239, 68, 68, 0.45)",
+          color: "#f87171",
+          borderRadius: "10px",
+          boxShadow: "0 10px 30px rgba(0, 0, 0, 0.5)",
+          fontSize: "14px",
+          maxWidth: "90%",
+          width: "max-content",
+          pointerEvents: "auto",
+          animation: "fade-in 0.25s ease"
+        }}>
+          <CircleAlert size={16} />
+          <span>{errorMessage}</span>
+          <button 
+            onClick={() => setErrorMessage(null)} 
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "#f87171",
+              cursor: "pointer",
+              marginLeft: "10px",
+              fontSize: "14px",
+              fontWeight: "bold",
+              lineHeight: 1
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* 2. Interactive Canvas Component */}
       <Canvas 
