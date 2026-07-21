@@ -1,0 +1,336 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Fira+Code:wght@400;500&display=swap');
+
+/* Basic reset */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  user-select: none;
+}
+
+body {
+  font-family: 'Outfit', 'Inter', sans-serif;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  background-color: var(--color-bg-outside);
+  color: var(--color-text-main);
+  transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+/* Theme definition system */
+body[data-theme="arcane"] {
+  --color-bg-outside: #0c0813;
+  --color-paper: #f4edd9;
+  --color-paper-grid: rgba(190, 160, 110, 0.25);
+  --color-text-main: #dfd5c6;
+  --color-text-dark: #2a2215;
+  --color-accent: #9333ea;
+  --color-accent-hover: #a855f7;
+  --color-chrome-bg: rgba(18, 12, 28, 0.75);
+  --color-chrome-border: rgba(147, 51, 234, 0.25);
+  --color-card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+  --font-title: 'Playfair Display', serif;
+  --sigil-glow: rgba(147, 51, 234, 0.5);
+}
+
+body[data-theme="scifi"] {
+  --color-bg-outside: #030712;
+  --color-paper: #090e1a;
+  --color-paper-grid: rgba(6, 182, 212, 0.15);
+  --color-text-main: #38bdf8;
+  --color-text-dark: #0284c7;
+  --color-accent: #06b6d4;
+  --color-accent-hover: #22d3ee;
+  --color-chrome-bg: rgba(10, 15, 30, 0.85);
+  --color-chrome-border: rgba(6, 182, 212, 0.35);
+  --color-card-shadow: 0 8px 32px 0 rgba(6, 182, 212, 0.2);
+  --font-title: 'Outfit', sans-serif;
+  --sigil-glow: rgba(6, 182, 212, 0.6);
+}
+
+body[data-theme="research"] {
+  --color-bg-outside: #15181a;
+  --color-paper: #1b1e20;
+  --color-paper-grid: rgba(255, 255, 255, 0.05);
+  --color-text-main: #e2e8f0;
+  --color-text-dark: #0f172a;
+  --color-accent: #f59e0b;
+  --color-accent-hover: #fbbf24;
+  --color-chrome-bg: rgba(24, 28, 30, 0.9);
+  --color-chrome-border: rgba(255, 255, 255, 0.1);
+  --color-card-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+  --font-title: 'Inter', sans-serif;
+  --sigil-glow: rgba(245, 158, 11, 0.3);
+}
+
+body[data-theme="studio"] {
+  --color-bg-outside: #f3f4f6;
+  --color-paper: #ffffff;
+  --color-paper-grid: rgba(0, 0, 0, 0.06);
+  --color-text-main: #1f2937;
+  --color-text-dark: #111827;
+  --color-accent: #4f46e5;
+  --color-accent-hover: #6366f1;
+  --color-chrome-bg: rgba(255, 255, 255, 0.9);
+  --color-chrome-border: rgba(0, 0, 0, 0.08);
+  --color-card-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --font-title: 'Outfit', sans-serif;
+  --sigil-glow: rgba(79, 70, 229, 0.2);
+}
+
+/* Glassmorphism & Chrome layouts */
+.chrome-container {
+  background: var(--color-chrome-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-chrome-border);
+  box-shadow: var(--color-card-shadow);
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+/* Top bar and header components */
+.topbar {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 95%;
+  max-width: 1400px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  z-index: 100;
+}
+
+.brand-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-sigil {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-hover));
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 15px var(--sigil-glow);
+  color: white;
+  font-weight: bold;
+  font-size: 16px;
+  animation: pulse-glow 3s infinite alternate;
+}
+
+.brand-title {
+  font-family: var(--font-title);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--color-text-main);
+}
+
+.brand-title span {
+  font-weight: 300;
+  opacity: 0.85;
+}
+
+.brand-title strong {
+  color: var(--color-accent);
+}
+
+/* Controls layout */
+.toolbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.control-btn {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--color-text-main);
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.control-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--color-accent);
+  transform: translateY(-1px);
+}
+
+.control-btn:active {
+  transform: translateY(1px);
+}
+
+select.control-btn {
+  appearance: none;
+  padding-right: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='currentColor'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 16px;
+}
+
+/* Floating canvas workspace */
+.canvas-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 10;
+  background-color: var(--color-bg-outside);
+  overflow: hidden;
+  cursor: grab;
+}
+
+.canvas-wrapper:active {
+  cursor: grabbing;
+}
+
+/* Main drawing Canvas element styling */
+.imperative-canvas {
+  background-color: var(--color-paper);
+  border: 1px solid var(--color-chrome-border);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+  display: block;
+  image-rendering: pixelated;
+  /* Grid pattern is dynamically drawn in drawing loops or CSS grid background */
+  background-image: radial-gradient(var(--color-paper-grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Right-side floating action orb for AI interaction */
+.ai-magic-orb {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, var(--color-accent-hover), var(--color-accent));
+  box-shadow: 0 8px 32px var(--sigil-glow), 0 0 20px 2px var(--color-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  cursor: pointer;
+  z-index: 100;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.ai-magic-orb:hover {
+  transform: scale(1.1) rotate(15deg);
+  box-shadow: 0 12px 40px var(--sigil-glow), 0 0 30px 5px var(--color-accent-hover);
+}
+
+.ai-magic-orb:active {
+  transform: scale(0.95);
+}
+
+/* Left-side toolbar floating tool-dock */
+.tool-dock {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  z-index: 100;
+}
+
+.tool-item {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--color-text-main);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tool-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--color-accent);
+  color: var(--color-accent-hover);
+  transform: scale(1.05);
+}
+
+.tool-item.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent-hover);
+  color: white;
+  box-shadow: 0 4px 12px var(--sigil-glow);
+}
+
+/* Draft layer: UI items layout container */
+.drafts-overlay-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.draft-item {
+  position: absolute;
+  pointer-events: auto;
+  border: 1px dashed var(--color-accent);
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(4px);
+  border-radius: 8px;
+  padding: 12px;
+  color: var(--color-text-main);
+  box-shadow: var(--color-card-shadow);
+  transition: border-color 0.2s ease;
+}
+
+.draft-item:hover {
+  border-color: var(--color-accent-hover);
+}
+
+/* Micro-animations */
+@keyframes pulse-glow {
+  0% {
+    box-shadow: 0 0 10px var(--sigil-glow);
+  }
+  100% {
+    box-shadow: 0 0 25px var(--sigil-glow);
+  }
+}
+
+@keyframes spinner {
+  to { transform: rotate(360deg); }
+}
+
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(255,255,255,0.1);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spinner 0.8s linear infinite;
+}
