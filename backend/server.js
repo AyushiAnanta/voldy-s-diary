@@ -58,7 +58,7 @@ app.use(express.urlencoded({extended: true, limit: "10mb"}));
 app.use(express.static("public"));
 app.use(cookieParser());
 
-const PORT = process.env.PORT || 8000;
+const PORT = process.env.PORT || 5000;
 
 // Initialize Google Gemini AI SDK client
 const apiKey = process.env.GEMINI_API_KEY;
@@ -89,7 +89,7 @@ function fileToGenerativePart(base64Data, mimeType) {
 
 app.post("/api/canvas-ai", async (req, res) => {
   try {
-    const { image, text, intent } = req.body;
+    const { image, text, intent, cropX, cropY, cropWidth, cropHeight } = req.body;
 
     if (!genAI) {
       return res.status(500).json({ 
@@ -116,12 +116,16 @@ app.post("/api/canvas-ai", async (req, res) => {
 
     const parts = [];
     
-    // User instruction text
-    if (text && text.trim().length > 0) {
-      parts.push(text);
-    } else {
-      parts.push("Analyze the canvas and respond to the handwriting/diagram.");
+    // User instruction text with coordinate placement guidance
+    let promptText = text && text.trim().length > 0 
+      ? text 
+      : "Analyze the canvas and respond to the handwriting/diagram.";
+
+    if (cropX !== undefined && cropY !== undefined) {
+      promptText += `\n\n[Spatial Context: The visual crop attached starts at global coordinates x: ${cropX}, y: ${cropY} with width: ${cropWidth} and height: ${cropHeight} of the logically 20000x20000 canvas. Please output layout coordinate commands (x, y) situated immediately next to or inside this region (e.g. near x: ${cropX + cropWidth}, y: ${cropY}).]`;
     }
+
+    parts.push(promptText);
 
     // Canvas image visual attachment
     if (image) {
@@ -147,7 +151,18 @@ app.post("/api/canvas-ai", async (req, res) => {
     // Parse the strict JSON return format expected by PenEcho client
     let parsedResult;
     try {
-      parsedResult = JSON.parse(responseText);
+      let cleanedText = responseText.trim();
+      if (cleanedText.startsWith("```json")) {
+        cleanedText = cleanedText.substring(7);
+      } else if (cleanedText.startsWith("```")) {
+        cleanedText = cleanedText.substring(3);
+      }
+      if (cleanedText.endsWith("```")) {
+        cleanedText = cleanedText.substring(0, cleanedText.length - 3);
+      }
+      cleanedText = cleanedText.trim();
+
+      parsedResult = JSON.parse(cleanedText);
     } catch (parseError) {
       console.warn("Failed to parse Gemini response as JSON directly, wrapping as fallback", parseError);
       parsedResult = {
