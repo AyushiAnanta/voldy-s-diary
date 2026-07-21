@@ -182,7 +182,7 @@ function App() {
         <div className="brand-section">
           <div className="brand-sigil">✨</div>
           <div className="brand-title">
-            <span>Pen</span><strong>Echo</strong>
+            <span>Voldy's</span><strong>Diary</strong>
           </div>
         </div>
 
