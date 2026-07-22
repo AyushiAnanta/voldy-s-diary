@@ -7,7 +7,11 @@ import {
   Undo, 
   RotateCcw, 
   Settings,
-  CircleAlert
+  CircleAlert,
+  HelpCircle,
+  FastForward,
+  BookOpen,
+  CheckCircle2
 } from "lucide-react";
 import Canvas from "./components/Canvas.jsx";
 
@@ -22,6 +26,7 @@ function App() {
   const [reasoning, setReasoning] = useState("medium");
   const [status, setStatus] = useState("ready");
   const [errorMessage, setErrorMessage] = useState(null);
+  const [isOrbMenuOpen, setIsOrbMenuOpen] = useState(false);
 
   const errorTimeoutRef = useRef(null);
 
@@ -86,9 +91,10 @@ function App() {
     }, 2500);
   };
 
-  // Triggers API pipeline request to the backend server
-  const handleTriggerAI = async () => {
+  // Triggers API pipeline request to the backend server with optional prompt modes
+  const handleTriggerAI = async (mode = "auto") => {
     if (status !== "ready") return;
+    setIsOrbMenuOpen(false); // Close menu if open
 
     const cropData = canvasRef.current.captureCrop();
     if (!cropData || !cropData.image) {
@@ -97,6 +103,18 @@ function App() {
     }
 
     setStatus("observing");
+
+    // Formulate custom prompt text based on user's selected mode
+    let customPromptText = "Analyze the handwriting/drawings in the visual crop and provide responses/continuations.";
+    if (mode === "hint") {
+      customPromptText = "Provide a subtle, encouraging hint for the next step of the equation/drawing. Do not reveal the full answer.";
+    } else if (mode === "continue") {
+      customPromptText = "Continue the next logical line/step of the equation or diagram.";
+    } else if (mode === "explain") {
+      customPromptText = "Explain the step-by-step mathematical reasoning and core concept behind the canvas content clearly.";
+    } else if (mode === "answer") {
+      customPromptText = "Solve the problem fully and show the final answer step-by-step.";
+    }
 
     try {
       // 2. Fetch structured drawing/text commands from Express server
@@ -109,7 +127,8 @@ function App() {
           cropY: cropData.cropY,
           cropWidth: cropData.cropWidth,
           cropHeight: cropData.cropHeight,
-          text: "Analyze the handwriting/drawings in the visual crop and provide responses/continuations.",
+          text: customPromptText,
+          mode: mode,
           intent: (activeTool === "lasso" || cropData.selectionContext) ? "typeset" : "auto"
         })
       });
@@ -409,13 +428,53 @@ function App() {
         </button>
       </div>
 
-      {/* 5. Glowing Magic AI Orb */}
-      <div 
-        className="ai-magic-orb" 
-        onClick={handleTriggerAI}
-        title="Summon Gemini AI"
-      >
-        <Sparkles size={28} />
+      {/* 5. Glowing Magic AI Orb with Interactive Action Menu */}
+      <div className="ai-orb-container">
+        {/* Interactive Radial Popover Action Menu */}
+        {isOrbMenuOpen && (
+          <div className="ai-orb-menu chrome-container">
+            <button 
+              className="orb-action-btn" 
+              onClick={() => handleTriggerAI("hint")}
+              title="Get a helpful hint"
+            >
+              <HelpCircle size={16} />
+              <span>Hint</span>
+            </button>
+            <button 
+              className="orb-action-btn" 
+              onClick={() => handleTriggerAI("continue")}
+              title="Continue next step"
+            >
+              <FastForward size={16} />
+              <span>Continue</span>
+            </button>
+            <button 
+              className="orb-action-btn" 
+              onClick={() => handleTriggerAI("explain")}
+              title="Explain reasoning"
+            >
+              <BookOpen size={16} />
+              <span>Explain</span>
+            </button>
+            <button 
+              className="orb-action-btn" 
+              onClick={() => handleTriggerAI("answer")}
+              title="Solve & show final answer"
+            >
+              <CheckCircle2 size={16} />
+              <span>Solve</span>
+            </button>
+          </div>
+        )}
+
+        <div 
+          className={`ai-magic-orb ${isOrbMenuOpen ? "active-menu" : ""}`} 
+          onClick={() => setIsOrbMenuOpen(prev => !prev)}
+          title="Click to select AI action (Hint, Continue, Explain, Solve)"
+        >
+          <Sparkles size={28} />
+        </div>
       </div>
     </div>
   );

@@ -89,7 +89,7 @@ function fileToGenerativePart(base64Data, mimeType) {
 
 app.post("/api/canvas-ai", async (req, res) => {
   try {
-    const { image, text, intent, cropX, cropY, cropWidth, cropHeight } = req.body;
+    const { image, text, intent, cropX, cropY, cropWidth, cropHeight, mode } = req.body;
 
     if (!genAI) {
       return res.status(500).json({ 
@@ -120,6 +120,16 @@ app.post("/api/canvas-ai", async (req, res) => {
     let promptText = text && text.trim().length > 0 
       ? text 
       : "Analyze the canvas and respond to the handwriting/diagram.";
+
+    if (mode === "hint") {
+      promptText += "\n\n[Action Directive: HINT. Give ONLY a concise, encouraging clue for the next step. Do NOT reveal the full answer or final numerical solution.]";
+    } else if (mode === "continue") {
+      promptText += "\n\n[Action Directive: CONTINUE. Continue writing/drawing the next logical step of the user's work directly after the latest input.]";
+    } else if (mode === "explain") {
+      promptText += "\n\n[Action Directive: EXPLAIN. Provide a detailed, step-by-step explanation of the underlying concepts and mathematical reasoning.]";
+    } else if (mode === "answer") {
+      promptText += "\n\n[Action Directive: ANSWER. Solve the problem completely and show the final answer directly.]";
+    }
 
     if (cropX !== undefined && cropY !== undefined) {
       promptText += `\n\n[Spatial Context: The visual crop attached starts at global coordinates x: ${cropX}, y: ${cropY} with width: ${cropWidth} and height: ${cropHeight} of the logically 20000x20000 canvas. Please output layout coordinate commands (x, y) situated immediately next to or inside this region (e.g. near x: ${cropX + cropWidth}, y: ${cropY}).]`;

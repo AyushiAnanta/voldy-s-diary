@@ -283,12 +283,21 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
     // 3. Render completed historical strokes
     strokesListRender(ctx, state.strokes, inkColor, paperColor);
 
-    // 4. Render current active stroke
+    // 4. Render current active stroke with midpoint quadratic Bezier vector curve smoothing
     if (state.isDrawing && state.currentStroke.length > 0) {
+      const pts = state.currentStroke;
       ctx.beginPath();
-      ctx.moveTo(state.currentStroke[0].x, state.currentStroke[0].y);
-      for (let i = 1; i < state.currentStroke.length; i++) {
-        ctx.lineTo(state.currentStroke[i].x, state.currentStroke[i].y);
+      ctx.moveTo(pts[0].x, pts[0].y);
+
+      if (pts.length === 2) {
+        ctx.lineTo(pts[1].x, pts[1].y);
+      } else if (pts.length > 2) {
+        for (let i = 1; i < pts.length - 1; i++) {
+          const midX = (pts[i].x + pts[i + 1].x) / 2;
+          const midY = (pts[i].y + pts[i + 1].y) / 2;
+          ctx.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
+        }
+        ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
       }
 
       if (activeTool === "lasso") {
@@ -427,15 +436,26 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
     ctx.restore();
   };
 
-  // Helper routine to draw array of strokes
+  // Helper routine to draw array of strokes using midpoint quadratic Bezier curve smoothing
   const strokesListRender = (ctx, strokes, inkColor, paperColor) => {
     strokes.forEach(stroke => {
-      if (!stroke.points || stroke.points.length < 2) return;
+      const pts = stroke.points;
+      if (!pts || pts.length < 2) return;
+
       ctx.beginPath();
-      ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-      for (let i = 1; i < stroke.points.length; i++) {
-        ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+      ctx.moveTo(pts[0].x, pts[0].y);
+
+      if (pts.length === 2) {
+        ctx.lineTo(pts[1].x, pts[1].y);
+      } else {
+        for (let i = 1; i < pts.length - 1; i++) {
+          const midX = (pts[i].x + pts[i + 1].x) / 2;
+          const midY = (pts[i].y + pts[i + 1].y) / 2;
+          ctx.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
+        }
+        ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
       }
+
       ctx.lineWidth = stroke.tool === "eraser" ? 24 : (stroke.width || 3);
       ctx.strokeStyle = stroke.tool === "eraser" ? paperColor : (stroke.color || inkColor);
       ctx.stroke();
@@ -520,9 +540,10 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
             state.lassoBounds = { minX: lMinX, minY: lMinY, maxX: lMaxX, maxY: lMaxY };
             state.hasLasso = true;
           } else {
-            // Commit stroke to memory list with timestamp for temporal segmentation
+            // Commit smoothed stroke to memory list with timestamp for temporal segmentation
+            const smoothedPoints = simplifyStrokePoints(state.currentStroke);
             state.strokes.push({
-              points: [...state.currentStroke],
+              points: smoothedPoints,
               tool: activeTool,
               color: activeTool === "eraser" ? null : null, // fallback dynamic theme colors
               timestamp: Date.now()
@@ -701,6 +722,24 @@ const addArrowHead = (points, strokes, inkColor, width) => {
 };
 
 export default Canvas;
+
+/**
+ * Simplifies a sequence of stroke points by removing redundant micro-jitter points.
+ */
+const simplifyStrokePoints = (points) => {
+  if (!points || points.length <= 2) return points || [];
+  const result = [points[0]];
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = result[result.length - 1];
+    const curr = points[i];
+    const distSq = (curr.x - prev.x) ** 2 + (curr.y - prev.y) ** 2;
+    if (distSq >= 2.25) { // at least 1.5px apart
+      result.push(curr);
+    }
+  }
+  result.push(points[points.length - 1]);
+  return result;
+};
 
 /**
  * Safely evaluates a mathematical expression string (e.g. "sin(x) + x^2") for a given x value.
