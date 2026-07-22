@@ -1,11 +1,38 @@
 import React, { useRef, useEffect, useImperativeHandle, forwardRef } from "react";
 
 /**
+ * In-memory Javascript mapping of colors matching theme names.
+ * Completely resolves race conditions when switching themes by bypassing getComputedStyle.
+ */
+const THEME_COLORS = {
+  arcane: {
+    paper: "#f5ebe0",
+    ink: "#2e231d",
+    grid: "rgba(214, 204, 194, 0.45)"
+  },
+  scifi: {
+    paper: "#f1e4f3",
+    ink: "#47192d",
+    grid: "rgba(244, 187, 211, 0.4)"
+  },
+  research: {
+    paper: "#e9f5db",
+    ink: "#242c19",
+    grid: "rgba(151, 169, 124, 0.35)"
+  },
+  studio: {
+    paper: "#110d1f",
+    ink: "#dec0f1",
+    grid: "rgba(222, 192, 241, 0.12)"
+  }
+};
+
+/**
  * High-performance Canvas component for drawing, panning, and zooming.
  * Uses a forwardRef to expose helper utilities to the parent App component
  * (such as capturing visual crops and clearing canvas elements).
  */
-const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange }, ref) => {
+const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange, drafts }, ref) => {
   const canvasRef = useRef(null);
   
   // Keep all coordinate data, zoom parameters, and active strokes in mutable references
@@ -33,6 +60,11 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
   useEffect(() => {
     onDrawFinishedRef.current = onDrawFinished;
   }, [onDrawFinished]);
+
+  // Redraw canvas to render in-flight preview shapes when draft list updates
+  useEffect(() => {
+    drawCanvas();
+  }, [drafts]);
 
   // Expose methods to the parent App component using useImperativeHandle
   useImperativeHandle(ref, () => ({
@@ -148,6 +180,18 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
     getViewportData: () => {
       const { panX, panY, zoom } = stateRef.current;
       return { panX, panY, zoom };
+    },
+
+    /**
+     * Converts a vector draw command into standard canvas ink strokes
+     * and bakes them permanently into the drawing coordinate database.
+     */
+    bakeDrawCommand: (cmd) => {
+      const activeColors = THEME_COLORS[theme] || THEME_COLORS.arcane;
+      const inkColor = activeColors.ink;
+      const newStrokes = convertDrawCommandToStrokes(cmd, inkColor);
+      stateRef.current.strokes.push(...newStrokes);
+      drawCanvas();
     }
   }));
 
@@ -158,11 +202,11 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
     const ctx = canvas.getContext("2d");
     const state = stateRef.current;
 
-    // Fetch theme variables from document styling properties
-    const cssStyles = getComputedStyle(document.body);
-    const paperColor = cssStyles.getPropertyValue("--color-paper").trim() || "#ffffff";
-    const inkColor = cssStyles.getPropertyValue("--color-text-dark").trim() || "#1f2937";
-    const gridColor = cssStyles.getPropertyValue("--color-paper-grid").trim() || "rgba(0,0,0,0.06)";
+    // Read theme colors directly from Javascript mapping to prevent browser styling race conditions
+    const activeColors = THEME_COLORS[theme] || THEME_COLORS.arcane;
+    const paperColor = activeColors.paper;
+    const inkColor = activeColors.ink;
+    const gridColor = activeColors.grid;
 
     // 1. Fill entire viewport with paper color (infinite paper — no edges)
     ctx.fillStyle = paperColor;
@@ -213,6 +257,71 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
       ctx.stroke();
     }
 
+    // 5. Draw pending AI draw previews in-flight (represented as dashed purple lines)
+    if (drafts && drafts.length > 0) {
+      ctx.save();
+      ctx.setLineDash([6, 6]); // dashed strokes for drafts
+      ctx.strokeStyle = "var(--color-accent)";
+      ctx.fillStyle = "var(--color-accent)";
+      ctx.lineWidth = 2.5;
+
+      drafts.forEach(draft => {
+        if (draft.accepted || !draft.rawCommand || draft.rawCommand.tool !== "draw") return;
+        const cmd = draft.rawCommand;
+        const [ox, oy] = cmd.origin;
+
+        for (let i = 0; i < cmd.types.length; i++) {
+          const type = cmd.types[i];
+          const item = cmd.items[i];
+          if (!item) continue;
+
+          ctx.beginPath();
+          if (type === "line" || type === "smooth") {
+            if (item.length < 2) continue;
+            ctx.moveTo(ox + item[0], oy + item[1]);
+            for (let j = 2; j < item.length; j += 2) {
+              ctx.lineTo(ox + item[j], oy + item[j+1]);
+            }
+          } else if (type === "rect") {
+            ctx.rect(ox + item[0], oy + item[1], item[2], item[3]);
+          } else if (type === "circle") {
+            ctx.arc(ox + item[0], oy + item[1], item[2], 0, Math.PI * 2);
+          } else if (type === "ellipse") {
+            ctx.ellipse(ox + item[0], oy + item[1], item[2], item[3], 0, 0, Math.PI * 2);
+          } else if (type === "arc") {
+            const startRad = (item[4] * Math.PI) / 180;
+            const sweepRad = (item[5] * Math.PI) / 180;
+            ctx.arc(ox + item[0], oy + item[1], item[2], startRad, startRad + sweepRad);
+          }
+          ctx.stroke();
+
+          // Render arrowhead preview if marked
+          if (cmd.arrows && cmd.arrows.includes(i)) {
+            let lastX, lastY, prevX, prevY;
+            if (type === "line" || type === "smooth") {
+              const len = item.length;
+              lastX = ox + item[len - 2];
+              lastY = oy + item[len - 1];
+              prevX = ox + item[len - 4];
+              prevY = oy + item[len - 3];
+            }
+            if (lastX !== undefined) {
+              const dx = lastX - prevX;
+              const dy = lastY - prevY;
+              const angle = Math.atan2(dy, dx);
+              ctx.beginPath();
+              ctx.moveTo(lastX, lastY);
+              ctx.lineTo(lastX - 12 * Math.cos(angle - Math.PI/6), lastY - 12 * Math.sin(angle - Math.PI/6));
+              ctx.lineTo(lastX - 12 * Math.cos(angle + Math.PI/6), lastY - 12 * Math.sin(angle + Math.PI/6));
+              ctx.closePath();
+              ctx.fill();
+            }
+          }
+        }
+      });
+      ctx.restore();
+    }
+
     ctx.restore();
   };
 
@@ -225,7 +334,7 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
       for (let i = 1; i < stroke.points.length; i++) {
         ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
       }
-      ctx.lineWidth = stroke.tool === "eraser" ? 24 : 3;
+      ctx.lineWidth = stroke.tool === "eraser" ? 24 : (stroke.width || 3);
       ctx.strokeStyle = stroke.tool === "eraser" ? paperColor : (stroke.color || inkColor);
       ctx.stroke();
     });
@@ -359,5 +468,117 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
     </div>
   );
 });
+
+/**
+ * Converts a structured vector draw command into standard canvas stroke elements.
+ */
+const convertDrawCommandToStrokes = (cmd, inkColor) => {
+  const [ox, oy] = cmd.origin;
+  const strokes = [];
+  const width = cmd.width ? cmd.width / 10 : 3;
+
+  for (let i = 0; i < cmd.types.length; i++) {
+    const type = cmd.types[i];
+    const item = cmd.items[i];
+    if (!item) continue;
+
+    let points = [];
+
+    if (type === "line" || type === "smooth") {
+      for (let j = 0; j < item.length; j += 2) {
+        points.push({ x: ox + item[j], y: oy + item[j+1] });
+      }
+    } else if (type === "rect") {
+      const [rx, ry, rw, rh] = item;
+      points = [
+        { x: ox + rx, y: oy + ry },
+        { x: ox + rx + rw, y: oy + ry },
+        { x: ox + rx + rw, y: oy + ry + rh },
+        { x: ox + rx, y: oy + ry + rh },
+        { x: ox + rx, y: oy + ry }
+      ];
+    } else if (type === "circle") {
+      const [cx, cy, r] = item;
+      const steps = 60;
+      for (let j = 0; j <= steps; j++) {
+        const theta = (j / steps) * Math.PI * 2;
+        points.push({
+          x: ox + cx + r * Math.cos(theta),
+          y: oy + cy + r * Math.sin(theta)
+        });
+      }
+    } else if (type === "ellipse") {
+      const [cx, cy, rx, ry] = item;
+      const steps = 60;
+      for (let j = 0; j <= steps; j++) {
+        const theta = (j / steps) * Math.PI * 2;
+        points.push({
+          x: ox + cx + rx * Math.cos(theta),
+          y: oy + cy + ry * Math.sin(theta)
+        });
+      }
+    } else if (type === "arc") {
+      const [cx, cy, rx, ry, startDeg, sweepDeg] = item;
+      const steps = Math.max(12, Math.round(Math.abs(sweepDeg) / 5));
+      const startRad = (startDeg * Math.PI) / 180;
+      const sweepRad = (sweepDeg * Math.PI) / 180;
+      for (let j = 0; j <= steps; j++) {
+        const theta = startRad + (j / steps) * sweepRad;
+        points.push({
+          x: ox + cx + rx * Math.cos(theta),
+          y: oy + cy + ry * Math.sin(theta)
+        });
+      }
+    }
+
+    if (points.length > 0) {
+      strokes.push({
+        points,
+        tool: "pen",
+        color: inkColor,
+        width,
+        timestamp: Date.now()
+      });
+
+      // Append arrowhead stroke if specified
+      if (cmd.arrows && cmd.arrows.includes(i)) {
+        addArrowHead(points, strokes, inkColor, width);
+      }
+    }
+  }
+  return strokes;
+};
+
+/**
+ * Utility to calculate and append arrowhead lines to a drawing path's end.
+ */
+const addArrowHead = (points, strokes, inkColor, width) => {
+  if (points.length < 2) return;
+  const last = points[points.length - 1];
+  const prev = points[points.length - 2];
+  const dx = last.x - prev.x;
+  const dy = last.y - prev.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len === 0) return;
+
+  const udx = dx / len;
+  const udy = dy / len;
+
+  const arrowSize = 12;
+  const angle = Math.PI / 6;
+
+  const x1 = last.x - arrowSize * (udx * Math.cos(angle) - udy * Math.sin(angle));
+  const y1 = last.y - arrowSize * (udy * Math.cos(angle) + udx * Math.sin(angle));
+  const x2 = last.x - arrowSize * (udx * Math.cos(angle) + udy * Math.sin(angle));
+  const y2 = last.y - arrowSize * (udy * Math.cos(angle) - udx * Math.sin(angle));
+
+  strokes.push({
+    points: [{ x: x1, y: y1 }, last, { x: x2, y: y2 }],
+    tool: "pen",
+    color: inkColor,
+    width,
+    timestamp: Date.now()
+  });
+};
 
 export default Canvas;

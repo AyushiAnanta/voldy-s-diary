@@ -188,8 +188,16 @@ function App() {
   };
 
   const handleAcceptDraft = (id) => {
-    // Keep draft on screen permanently by marking it accepted
-    setDrafts(prev => prev.map(d => d.id === id ? { ...d, accepted: true } : d));
+    const draft = drafts.find(d => d.id === id);
+    if (draft && draft.rawCommand && draft.rawCommand.tool === "draw") {
+      // Bake the vector shape into permanent canvas strokes
+      canvasRef.current.bakeDrawCommand(draft.rawCommand);
+      // Remove it from the draft overlay cards
+      setDrafts(prev => prev.filter(d => d.id !== id));
+    } else {
+      // Keep draft on screen permanently by marking it accepted
+      setDrafts(prev => prev.map(d => d.id === id ? { ...d, accepted: true } : d));
+    }
   };
 
   const handleDiscardDraft = (id) => {
@@ -292,6 +300,7 @@ function App() {
         theme={theme}
         onViewportChange={handleViewportChange}
         onDrawFinished={handleDrawFinished}
+        drafts={drafts}
       />
 
       {/* 3. GPU-Accelerated Absolute Positioning Draft Layer */}
