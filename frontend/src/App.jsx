@@ -110,7 +110,7 @@ function App() {
           cropWidth: cropData.cropWidth,
           cropHeight: cropData.cropHeight,
           text: "Analyze the handwriting/drawings in the visual crop and provide responses/continuations.",
-          intent: activeTool === "lasso" ? "typeset" : "auto"
+          intent: (activeTool === "lasso" || cropData.selectionContext) ? "typeset" : "auto"
         })
       });
 

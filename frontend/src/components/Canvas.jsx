@@ -46,7 +46,9 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
     strokes: [],       // Array of completed user ink strokes: [{ points: [{x, y}], tool, color, timestamp }]
     currentStroke: [],  // Points of the active stroke
     lastPointerPos: { x: 0, y: 0 },
-    lastAiTriggerTime: 0  // Timestamp of last AI crop for temporal segmentation
+    lastAiTriggerTime: 0, // Timestamp of last AI crop for temporal segmentation
+    hasLasso: false,
+    lassoBounds: null
   });
 
   // Keep callback refs updated to avoid stale closures and infinite re-render loops
@@ -86,29 +88,52 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
       const allStrokes = state.strokes;
       if (!allStrokes || allStrokes.length === 0) return null;
 
-      // Temporal segmentation: only consider strokes drawn since last AI call
-      let targetStrokes = allStrokes.filter(s => s.timestamp > state.lastAiTriggerTime);
+      let targetStrokes = [];
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      let isLassoSelection = false;
 
-      // Fallback: if no new strokes since last call, use the most recent 3
-      if (targetStrokes.length === 0) {
-        targetStrokes = allStrokes.slice(-3);
+      if (state.hasLasso && state.lassoBounds) {
+        // Targeted Lasso Crop: Crop exclusively around the lasso selection bounds
+        isLassoSelection = true;
+        minX = state.lassoBounds.minX;
+        minY = state.lassoBounds.minY;
+        maxX = state.lassoBounds.maxX;
+        maxY = state.lassoBounds.maxY;
+
+        // Collect all strokes that intersect the lasso selection box
+        targetStrokes = allStrokes.filter(stroke => {
+          return stroke.points.some(pt => 
+            pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY
+          );
+        });
+
+        if (targetStrokes.length === 0) targetStrokes = allStrokes.slice(-3);
+
+        // Reset lasso selection after capture
+        state.hasLasso = false;
+        state.lassoBounds = null;
+      } else {
+        // Temporal segmentation: only consider strokes drawn since last AI call
+        targetStrokes = allStrokes.filter(s => s.timestamp > state.lastAiTriggerTime);
+
+        // Fallback: if no new strokes since last call, use the most recent 3
+        if (targetStrokes.length === 0) {
+          targetStrokes = allStrokes.slice(-3);
+        }
+
+        // Calculate bounding box of target strokes
+        targetStrokes.forEach(stroke => {
+          stroke.points.forEach(pt => {
+            if (pt.x < minX) minX = pt.x;
+            if (pt.y < minY) minY = pt.y;
+            if (pt.x > maxX) maxX = pt.x;
+            if (pt.y > maxY) maxY = pt.y;
+          });
+        });
       }
 
       // Update the trigger timestamp for the next call
       state.lastAiTriggerTime = Date.now();
-
-      // 1. Calculate bounding box of target strokes only
-      let minX = Infinity, minY = Infinity;
-      let maxX = -Infinity, maxY = -Infinity;
-
-      targetStrokes.forEach(stroke => {
-        stroke.points.forEach(pt => {
-          if (pt.x < minX) minX = pt.x;
-          if (pt.y < minY) minY = pt.y;
-          if (pt.x > maxX) maxX = pt.x;
-          if (pt.y > maxY) maxY = pt.y;
-        });
-      });
 
       // If coordinates are invalid, fallback
       if (minX === Infinity || minY === Infinity) return null;
@@ -170,7 +195,8 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
         cropX: Math.round(minX),
         cropY: Math.round(minY),
         cropWidth: Math.round(cropWidth),
-        cropHeight: Math.round(cropHeight)
+        cropHeight: Math.round(cropHeight),
+        selectionContext: isLassoSelection
       };
     },
 
@@ -264,9 +290,35 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
       for (let i = 1; i < state.currentStroke.length; i++) {
         ctx.lineTo(state.currentStroke[i].x, state.currentStroke[i].y);
       }
-      ctx.lineWidth = activeTool === "eraser" ? 24 : 3;
-      ctx.strokeStyle = activeTool === "eraser" ? "rgba(239, 68, 68, 0.4)" : inkColor;
-      ctx.stroke();
+
+      if (activeTool === "lasso") {
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "var(--color-accent)";
+        ctx.stroke();
+        ctx.restore();
+      } else {
+        ctx.lineWidth = activeTool === "eraser" ? 24 : 3;
+        ctx.strokeStyle = activeTool === "eraser" ? "rgba(239, 68, 68, 0.4)" : inkColor;
+        ctx.stroke();
+      }
+    }
+
+    // Render active Lasso Selection Box Overlay
+    if (state.hasLasso && state.lassoBounds) {
+      const { minX, minY, maxX, maxY } = state.lassoBounds;
+      const pad = 12;
+      const lw = maxX - minX + pad * 2;
+      const lh = maxY - minY + pad * 2;
+
+      ctx.save();
+      ctx.setLineDash([6, 6]);
+      ctx.strokeStyle = "var(--color-accent)";
+      ctx.fillStyle = "rgba(113, 97, 239, 0.08)";
+      ctx.fillRect(minX - pad, minY - pad, lw, lh);
+      ctx.strokeRect(minX - pad, minY - pad, lw, lh);
+      ctx.restore();
     }
 
     // 5. Draw pending AI draw previews in-flight (represented as dashed purple lines)
@@ -416,11 +468,15 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
       // Alternate brush mode drawing actions on click/touch
       const state = stateRef.current;
       
-      // Pen/Eraser acts on primary click
-      if (e.button === 0 && (activeTool === "pen" || activeTool === "eraser")) {
+      // Pen/Eraser/Lasso acts on primary click
+      if (e.button === 0 && (activeTool === "pen" || activeTool === "eraser" || activeTool === "lasso")) {
         state.isDrawing = true;
         const globalPos = toGlobalCoords(e.clientX, e.clientY);
         state.currentStroke = [globalPos];
+        if (activeTool === "lasso") {
+          state.hasLasso = false;
+          state.lassoBounds = null;
+        }
       } else {
         // Panning mode acts on middle mouse, right click, or when selected
         state.isPanning = true;
@@ -452,13 +508,26 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
       if (state.isDrawing) {
         state.isDrawing = false;
         if (state.currentStroke.length > 1) {
-          // Commit stroke to memory list with timestamp for temporal segmentation
-          state.strokes.push({
-            points: [...state.currentStroke],
-            tool: activeTool,
-            color: activeTool === "eraser" ? null : null, // fallback dynamic theme colors
-            timestamp: Date.now()
-          });
+          if (activeTool === "lasso") {
+            // Process Lasso Selection: Compute bounding box of loop
+            let lMinX = Infinity, lMinY = Infinity, lMaxX = -Infinity, lMaxY = -Infinity;
+            state.currentStroke.forEach(pt => {
+              if (pt.x < lMinX) lMinX = pt.x;
+              if (pt.y < lMinY) lMinY = pt.y;
+              if (pt.x > lMaxX) lMaxX = pt.x;
+              if (pt.y > lMaxY) lMaxY = pt.y;
+            });
+            state.lassoBounds = { minX: lMinX, minY: lMinY, maxX: lMaxX, maxY: lMaxY };
+            state.hasLasso = true;
+          } else {
+            // Commit stroke to memory list with timestamp for temporal segmentation
+            state.strokes.push({
+              points: [...state.currentStroke],
+              tool: activeTool,
+              color: activeTool === "eraser" ? null : null, // fallback dynamic theme colors
+              timestamp: Date.now()
+            });
+          }
         }
         state.currentStroke = [];
         drawCanvas();
