@@ -11,7 +11,10 @@ import {
   HelpCircle,
   FastForward,
   BookOpen,
-  CheckCircle2
+  CheckCircle2,
+  LineChart,
+  CheckCheck,
+  Type
 } from "lucide-react";
 import Canvas from "./components/Canvas.jsx";
 
@@ -112,6 +115,12 @@ function App() {
       customPromptText = "Continue the next logical line/step of the equation or diagram.";
     } else if (mode === "explain") {
       customPromptText = "Explain the step-by-step mathematical reasoning and core concept behind the canvas content clearly.";
+    } else if (mode === "plot") {
+      customPromptText = "Generate a mathematical function plot (plot_function) or diagram for the equation or data on canvas.";
+    } else if (mode === "check") {
+      customPromptText = "Check and verify the math/writing for errors. Point out mistakes or confirm correctness.";
+    } else if (mode === "typeset") {
+      customPromptText = "Typeset and clean up the handwritten text/math into clean machine-rendered text.";
     } else if (mode === "answer") {
       customPromptText = "Solve the problem fully and show the final answer step-by-step.";
     }
@@ -129,7 +138,7 @@ function App() {
           cropHeight: cropData.cropHeight,
           text: customPromptText,
           mode: mode,
-          intent: (activeTool === "lasso" || cropData.selectionContext) ? "typeset" : "auto"
+          intent: (mode === "typeset" || activeTool === "lasso" || cropData.selectionContext) ? "typeset" : (mode === "plot" ? "plot" : "auto")
         })
       });
 
@@ -456,6 +465,30 @@ function App() {
             >
               <BookOpen size={16} />
               <span>Explain</span>
+            </button>
+            <button 
+              className="orb-action-btn" 
+              onClick={() => handleTriggerAI("plot")}
+              title="Plot function / graph"
+            >
+              <LineChart size={16} />
+              <span>Plot</span>
+            </button>
+            <button 
+              className="orb-action-btn" 
+              onClick={() => handleTriggerAI("check")}
+              title="Verify & check for errors"
+            >
+              <CheckCheck size={16} />
+              <span>Check</span>
+            </button>
+            <button 
+              className="orb-action-btn" 
+              onClick={() => handleTriggerAI("typeset")}
+              title="Clean up handwriting into text"
+            >
+              <Type size={16} />
+              <span>Typeset</span>
             </button>
             <button 
               className="orb-action-btn" 
