@@ -192,6 +192,18 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
       const newStrokes = convertDrawCommandToStrokes(cmd, inkColor);
       stateRef.current.strokes.push(...newStrokes);
       drawCanvas();
+    },
+
+    /**
+     * Converts a mathematical plot command into standard canvas ink strokes
+     * and bakes them permanently into the drawing coordinate database.
+     */
+    bakePlotCommand: (cmd) => {
+      const activeColors = THEME_COLORS[theme] || THEME_COLORS.arcane;
+      const inkColor = activeColors.ink;
+      const newStrokes = convertPlotCommandToStrokes(cmd, inkColor);
+      stateRef.current.strokes.push(...newStrokes);
+      drawCanvas();
     }
   }));
 
@@ -317,6 +329,44 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
               ctx.fill();
             }
           }
+        }
+
+        // Render plot_function preview
+        if (cmd.tool === "plot_function") {
+          const { x, y, w = 400, h = 300, expression } = cmd;
+          const xMin = -6, xMax = 6, yMin = -6, yMax = 6;
+          const toCanvasCoords = (xm, ym) => ({
+            x: x + ((xm - xMin) / (xMax - xMin)) * w,
+            y: y + ((yMax - ym) / (yMax - yMin)) * h
+          });
+
+          // Draw preview bounding box & axes
+          ctx.beginPath();
+          ctx.rect(x, y, w, h);
+          const orig = toCanvasCoords(0, 0);
+          ctx.moveTo(x, orig.y); ctx.lineTo(x + w, orig.y);
+          ctx.moveTo(orig.x, y + h); ctx.lineTo(orig.x, y);
+          ctx.stroke();
+
+          // Draw evaluated mathematical function curve preview
+          ctx.beginPath();
+          let isDrawingCurve = false;
+          for (let i = 0; i <= 100; i++) {
+            const xm = xMin + (i / 100) * (xMax - xMin);
+            const ym = evaluateMathExpression(expression, xm);
+            if (ym !== null && ym >= yMin && ym <= yMax) {
+              const pt = toCanvasCoords(xm, ym);
+              if (!isDrawingCurve) {
+                ctx.moveTo(pt.x, pt.y);
+                isDrawingCurve = true;
+              } else {
+                ctx.lineTo(pt.x, pt.y);
+              }
+            } else {
+              isDrawingCurve = false;
+            }
+          }
+          ctx.stroke();
         }
       });
       ctx.restore();
@@ -582,3 +632,151 @@ const addArrowHead = (points, strokes, inkColor, width) => {
 };
 
 export default Canvas;
+
+/**
+ * Safely evaluates a mathematical expression string (e.g. "sin(x) + x^2") for a given x value.
+ */
+const evaluateMathExpression = (exprStr, xVal) => {
+  if (!exprStr || typeof exprStr !== "string") return null;
+  try {
+    let sanitized = exprStr
+      .replace(/\^/g, "**")
+      .replace(/\bsin\b/g, "Math.sin")
+      .replace(/\bcos\b/g, "Math.cos")
+      .replace(/\btan\b/g, "Math.tan")
+      .replace(/\bsqrt\b/g, "Math.sqrt")
+      .replace(/\babs\b/g, "Math.abs")
+      .replace(/\bexp\b/g, "Math.exp")
+      .replace(/\b(log|ln)\b/g, "Math.log")
+      .replace(/\bpi\b/gi, "Math.PI")
+      .replace(/\be\b/g, "Math.E");
+
+    const fn = new Function("x", `return ${sanitized};`);
+    const val = fn(xVal);
+    return (typeof val === "number" && !isNaN(val) && isFinite(val)) ? val : null;
+  } catch (err) {
+    return null;
+  }
+};
+
+/**
+ * Converts a plot_function command into a collection of stroke paths (axes, ticks, grid, and curve).
+ */
+const convertPlotCommandToStrokes = (cmd, inkColor) => {
+  const { x, y, w = 400, h = 300, expression } = cmd;
+  const strokes = [];
+  const axisColor = inkColor;
+
+  // Domain & Range in Math Coordinates
+  const xMin = -6, xMax = 6;
+  const yMin = -6, yMax = 6;
+
+  // Function to map math (xMath, yMath) -> global canvas coordinates
+  const toCanvasCoords = (xm, ym) => {
+    const cx = x + ((xm - xMin) / (xMax - xMin)) * w;
+    const cy = y + ((yMax - ym) / (yMax - yMin)) * h;
+    return { x: cx, y: cy };
+  };
+
+  // 1. Outer Box Border
+  strokes.push({
+    points: [
+      { x, y },
+      { x: x + w, y },
+      { x: x + w, y: y + h },
+      { x, y: y + h },
+      { x, y }
+    ],
+    tool: "pen",
+    color: inkColor,
+    width: 2,
+    timestamp: Date.now()
+  });
+
+  // 2. X-Axis and Y-Axis Lines (passing through Math origin 0,0)
+  const originCanvas = toCanvasCoords(0, 0);
+
+  // X Axis Line (horizontal)
+  const xAxisPoints = [{ x, y: originCanvas.y }, { x: x + w, y: originCanvas.y }];
+  strokes.push({
+    points: xAxisPoints,
+    tool: "pen",
+    color: axisColor,
+    width: 2,
+    timestamp: Date.now()
+  });
+  addArrowHead(xAxisPoints, strokes, axisColor, 2);
+
+  // Y Axis Line (vertical)
+  const yAxisPoints = [{ x: originCanvas.x, y: y + h }, { x: originCanvas.x, y }];
+  strokes.push({
+    points: yAxisPoints,
+    tool: "pen",
+    color: axisColor,
+    width: 2,
+    timestamp: Date.now()
+  });
+  addArrowHead(yAxisPoints, strokes, axisColor, 2);
+
+  // 3. Grid Ticks & Labels
+  for (let tickX = -5; tickX <= 5; tickX += 1) {
+    if (tickX === 0) continue;
+    const pt = toCanvasCoords(tickX, 0);
+    strokes.push({
+      points: [{ x: pt.x, y: pt.y - 4 }, { x: pt.x, y: pt.y + 4 }],
+      tool: "pen",
+      color: axisColor,
+      width: 1.5,
+      timestamp: Date.now()
+    });
+  }
+  for (let tickY = -5; tickY <= 5; tickY += 1) {
+    if (tickY === 0) continue;
+    const pt = toCanvasCoords(0, tickY);
+    strokes.push({
+      points: [{ x: pt.x - 4, y: pt.y }, { x: pt.x + 4, y: pt.y }],
+      tool: "pen",
+      color: axisColor,
+      width: 1.5,
+      timestamp: Date.now()
+    });
+  }
+
+  // 4. Sample and Evaluate the Function Curve over 120 points
+  const steps = 120;
+  let currentCurvePoints = [];
+
+  for (let i = 0; i <= steps; i++) {
+    const xm = xMin + (i / steps) * (xMax - xMin);
+    const ym = evaluateMathExpression(expression, xm);
+
+    if (ym !== null && ym >= yMin && ym <= yMax) {
+      const pt = toCanvasCoords(xm, ym);
+      currentCurvePoints.push(pt);
+    } else {
+      // Break stroke if math expression undefined or out of range
+      if (currentCurvePoints.length > 1) {
+        strokes.push({
+          points: [...currentCurvePoints],
+          tool: "pen",
+          color: inkColor,
+          width: 3,
+          timestamp: Date.now()
+        });
+      }
+      currentCurvePoints = [];
+    }
+  }
+
+  if (currentCurvePoints.length > 1) {
+    strokes.push({
+      points: currentCurvePoints,
+      tool: "pen",
+      color: inkColor,
+      width: 3,
+      timestamp: Date.now()
+    });
+  }
+
+  return strokes;
+};

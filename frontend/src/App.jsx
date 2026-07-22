@@ -189,14 +189,19 @@ function App() {
 
   const handleAcceptDraft = (id) => {
     const draft = drafts.find(d => d.id === id);
-    if (draft && draft.rawCommand && draft.rawCommand.tool === "draw") {
-      // Bake the vector shape into permanent canvas strokes
-      canvasRef.current.bakeDrawCommand(draft.rawCommand);
-      // Remove it from the draft overlay cards
-      setDrafts(prev => prev.filter(d => d.id !== id));
-    } else {
-      // Keep draft on screen permanently by marking it accepted
-      setDrafts(prev => prev.map(d => d.id === id ? { ...d, accepted: true } : d));
+    if (draft && draft.rawCommand) {
+      if (draft.rawCommand.tool === "draw") {
+        // Bake the vector shape into permanent canvas strokes
+        canvasRef.current.bakeDrawCommand(draft.rawCommand);
+        setDrafts(prev => prev.filter(d => d.id !== id));
+      } else if (draft.rawCommand.tool === "plot_function") {
+        // Bake the function plot curve & axes into permanent canvas strokes
+        canvasRef.current.bakePlotCommand(draft.rawCommand);
+        setDrafts(prev => prev.filter(d => d.id !== id));
+      } else {
+        // Keep draft on screen permanently by marking it accepted
+        setDrafts(prev => prev.map(d => d.id === id ? { ...d, accepted: true } : d));
+      }
     }
   };
 
