@@ -440,6 +440,17 @@ body[data-theme="arcane"] .tool-item:hover, body[data-theme="research"] .tool-it
   to { transform: rotate(360deg); }
 }
 
+@keyframes slideUpFade {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .loading-spinner {
   width: 16px;
   height: 16px;
@@ -452,8 +463,10 @@ body[data-theme="arcane"] .tool-item:hover, body[data-theme="research"] .tool-it
   margin-right: 8px;
 }
 
-body[data-theme="studio"] .loading-spinner {
-  border: 2px solid rgba(0, 0, 0, 0.1);
+body[data-theme="arcane"] .loading-spinner,
+body[data-theme="research"] .loading-spinner,
+body[data-theme="scifi"] .loading-spinner {
+  border: 2px solid rgba(0, 0, 0, 0.15);
   border-top-color: var(--color-accent);
 }
 

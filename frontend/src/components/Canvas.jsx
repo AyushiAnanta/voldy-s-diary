@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useImperativeHandle, forwardRef } from "react";
+import { evaluateMathExpression } from "../utils/mathParser.js";
 
 /**
  * In-memory Javascript mapping of colors matching theme names.
@@ -8,29 +9,33 @@ const THEME_COLORS = {
   arcane: {
     paper: "#f5ebe0",
     ink: "#2e231d",
-    grid: "rgba(214, 204, 194, 0.45)"
+    grid: "rgba(214, 204, 194, 0.45)",
+    accent: "#bfa08f"
   },
   scifi: {
     paper: "#f1e4f3",
     ink: "#47192d",
-    grid: "rgba(244, 187, 211, 0.4)"
+    grid: "rgba(244, 187, 211, 0.4)",
+    accent: "#fe5d9f"
   },
   research: {
     paper: "#e9f5db",
     ink: "#242c19",
-    grid: "rgba(151, 169, 124, 0.35)"
+    grid: "rgba(151, 169, 124, 0.35)",
+    accent: "#718355"
   },
   studio: {
     paper: "#110d1f",
     ink: "#dec0f1",
-    grid: "rgba(222, 192, 241, 0.12)"
+    grid: "rgba(222, 192, 241, 0.12)",
+    accent: "#7161ef"
   }
 };
 
 /**
  * High-performance Canvas component for drawing, panning, and zooming.
  * Uses a forwardRef to expose helper utilities to the parent App component
- * (such as capturing visual crops and clearing canvas elements).
+ * (such as capturing visual crops, clearing canvas, and persistence hooks).
  */
 const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange, drafts }, ref) => {
   const canvasRef = useRef(null);
@@ -77,6 +82,39 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
       stateRef.current.strokes = [];
       stateRef.current.currentStroke = [];
       drawCanvas();
+    },
+
+    /**
+     * Retrieves full state for persistence
+     */
+    getCanvasState: () => {
+      const { strokes, panX, panY, zoom } = stateRef.current;
+      return { strokes, viewport: { panX, panY, zoom } };
+    },
+
+    /**
+     * Loads persisted state into canvas memory
+     */
+    loadCanvasState: (savedStrokes, savedViewport) => {
+      if (Array.isArray(savedStrokes)) {
+        stateRef.current.strokes = savedStrokes;
+      }
+      if (savedViewport) {
+        stateRef.current.panX = savedViewport.panX || 0;
+        stateRef.current.panY = savedViewport.panY || 0;
+        stateRef.current.zoom = savedViewport.zoom || 1.0;
+        if (onViewportChangeRef.current) {
+          onViewportChangeRef.current(savedViewport);
+        }
+      }
+      drawCanvas();
+    },
+
+    /**
+     * Active drawing check for multi-tab sync lock
+     */
+    isDrawingActive: () => {
+      return stateRef.current.isDrawing || stateRef.current.isPanning;
     },
 
     /**
@@ -150,15 +188,15 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
 
       if (cropWidth <= 0 || cropHeight <= 0) return null;
 
-      // 2. Create offscreen canvas to render the crop
+      // Create offscreen canvas to render the crop
       const offscreen = document.createElement("canvas");
       offscreen.width = Math.min(cropWidth, 2048); // limit bounds to keep payload small
       offscreen.height = Math.min(cropHeight, 1536);
       const oCtx = offscreen.getContext("2d");
 
-      // Draw paper background matching active theme
-      const cssStyles = getComputedStyle(document.body);
-      const paperColor = cssStyles.getPropertyValue("--color-paper").trim() || "#ffffff";
+      // Read theme paper color synchronously from JS map (bypasses getComputedStyle race conditions)
+      const activeColors = THEME_COLORS[theme] || THEME_COLORS.arcane;
+      const paperColor = activeColors.paper;
       oCtx.fillStyle = paperColor;
       oCtx.fillRect(0, 0, offscreen.width, offscreen.height);
 
@@ -183,7 +221,7 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
         
         oCtx.lineWidth = stroke.tool === "eraser" ? 24 : 3;
         // Erase strokes draw with paper color on the crop
-        oCtx.strokeStyle = stroke.tool === "eraser" ? paperColor : (stroke.color || "#1f2937");
+        oCtx.strokeStyle = stroke.tool === "eraser" ? paperColor : (stroke.color || activeColors.ink);
         oCtx.stroke();
       });
 
@@ -245,6 +283,7 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
     const paperColor = activeColors.paper;
     const inkColor = activeColors.ink;
     const gridColor = activeColors.grid;
+    const accentColor = activeColors.accent;
 
     // 1. Fill entire viewport with paper color (infinite paper — no edges)
     ctx.fillStyle = paperColor;
@@ -304,7 +343,7 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
         ctx.save();
         ctx.setLineDash([4, 4]);
         ctx.lineWidth = 2;
-        ctx.strokeStyle = "var(--color-accent)";
+        ctx.strokeStyle = accentColor;
         ctx.stroke();
         ctx.restore();
       } else {
@@ -323,7 +362,7 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
 
       ctx.save();
       ctx.setLineDash([6, 6]);
-      ctx.strokeStyle = "var(--color-accent)";
+      ctx.strokeStyle = accentColor;
       ctx.fillStyle = "rgba(113, 97, 239, 0.08)";
       ctx.fillRect(minX - pad, minY - pad, lw, lh);
       ctx.strokeRect(minX - pad, minY - pad, lw, lh);
@@ -334,8 +373,8 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
     if (drafts && drafts.length > 0) {
       ctx.save();
       ctx.setLineDash([6, 6]); // dashed strokes for drafts
-      ctx.strokeStyle = "var(--color-accent)";
-      ctx.fillStyle = "var(--color-accent)";
+      ctx.strokeStyle = accentColor;
+      ctx.fillStyle = accentColor;
       ctx.lineWidth = 2.5;
 
       drafts.forEach(draft => {
@@ -392,7 +431,7 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
           }
         }
 
-        // Render plot_function preview
+        // Render plot_function preview using safe evaluator
         if (cmd.tool === "plot_function") {
           const { x, y, w = 400, h = 300, expression } = cmd;
           const xMin = -6, xMax = 6, yMin = -6, yMax = 6;
@@ -414,9 +453,9 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
           let isDrawingCurve = false;
           for (let i = 0; i <= 100; i++) {
             const xm = xMin + (i / 100) * (xMax - xMin);
-            const ym = evaluateMathExpression(expression, xm);
-            if (ym !== null && ym >= yMin && ym <= yMax) {
-              const pt = toCanvasCoords(xm, ym);
+            const evalRes = evaluateMathExpression(expression, xm);
+            if (evalRes.ok && evalRes.value >= yMin && evalRes.value <= yMax) {
+              const pt = toCanvasCoords(xm, evalRes.value);
               if (!isDrawingCurve) {
                 ctx.moveTo(pt.x, pt.y);
                 isDrawingCurve = true;
@@ -457,6 +496,7 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
       }
 
       ctx.lineWidth = stroke.tool === "eraser" ? 24 : (stroke.width || 3);
+      // Retain stroke's original drawn ink color across theme switches
       ctx.strokeStyle = stroke.tool === "eraser" ? paperColor : (stroke.color || inkColor);
       ctx.stroke();
     });
@@ -479,13 +519,20 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
     // Helper: Map client screen coordinate to logic board global coordinate space
     const toGlobalCoords = (clientX, clientY) => {
       const state = stateRef.current;
-      const x = (clientX - window.innerWidth / 2 - state.panX) / state.zoom + 10000;
-      const y = (clientY - window.innerHeight / 2 - state.panY) / state.zoom + 10000;
+      const rect = canvas.getBoundingClientRect();
+      const mx = clientX - rect.left - rect.width / 2;
+      const my = clientY - rect.top - rect.height / 2;
+      const x = (mx - state.panX) / state.zoom + 10000;
+      const y = (my - state.panY) / state.zoom + 10000;
       return { x, y };
     };
 
     const handlePointerDown = (e) => {
-      // Alternate brush mode drawing actions on click/touch
+      // Capture pointer to guarantee pointerup fires even if pointer leaves canvas bounds
+      if (canvas.setPointerCapture) {
+        try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+      }
+
       const state = stateRef.current;
       
       // Pen/Eraser/Lasso acts on primary click
@@ -523,8 +570,14 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
       }
     };
 
-    const handlePointerUp = () => {
+    const handlePointerUp = (e) => {
+      if (canvas.releasePointerCapture && e) {
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+      }
+
       const state = stateRef.current;
+      const activeColors = THEME_COLORS[theme] || THEME_COLORS.arcane;
+
       if (state.isDrawing) {
         state.isDrawing = false;
         if (state.currentStroke.length > 1) {
@@ -540,12 +593,12 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
             state.lassoBounds = { minX: lMinX, minY: lMinY, maxX: lMaxX, maxY: lMaxY };
             state.hasLasso = true;
           } else {
-            // Commit smoothed stroke to memory list with timestamp for temporal segmentation
+            // Commit smoothed stroke to memory list with timestamp & exact ink color retention
             const smoothedPoints = simplifyStrokePoints(state.currentStroke);
             state.strokes.push({
               points: smoothedPoints,
               tool: activeTool,
-              color: activeTool === "eraser" ? null : null, // fallback dynamic theme colors
+              color: activeTool === "eraser" ? null : activeColors.ink,
               timestamp: Date.now()
             });
           }
@@ -557,17 +610,38 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
       state.isPanning = false;
     };
 
+    const handlePointerCancel = (e) => {
+      if (canvas.releasePointerCapture && e) {
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+      }
+      const state = stateRef.current;
+      state.isDrawing = false;
+      state.isPanning = false;
+      state.currentStroke = [];
+      state.hasLasso = false;
+      state.lassoBounds = null;
+      drawCanvas();
+    };
+
     const handleWheel = (e) => {
       e.preventDefault();
       const state = stateRef.current;
-      const zoomFactor = 1.08;
       
-      // Calculate dynamic mouse focus position zoom updates
-      if (e.deltaY < 0) {
-        state.zoom = Math.min(state.zoom * zoomFactor, 3.5);
-      } else {
-        state.zoom = Math.max(state.zoom / zoomFactor, 0.15);
-      }
+      // Compute mouse offset relative to actual canvas bounding rect (insulates against toolbars/layout shifts)
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left - rect.width / 2;
+      const my = e.clientY - rect.top - rect.height / 2;
+
+      const oldZoom = state.zoom;
+      const zoomFactor = 1.08;
+      const newZoom = Math.min(Math.max(e.deltaY < 0 ? oldZoom * zoomFactor : oldZoom / zoomFactor, 0.15), 3.5);
+      const zoomRatio = newZoom / oldZoom;
+
+      // Mathematically precise cursor-centered zoom
+      state.panX = mx - (mx - state.panX) * zoomRatio;
+      state.panY = my - (my - state.panY) * zoomRatio;
+      state.zoom = newZoom;
+
       drawCanvas();
       if (onViewportChangeRef.current) {
         onViewportChangeRef.current({ panX: state.panX, panY: state.panY, zoom: state.zoom });
@@ -582,6 +656,7 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
     canvas.addEventListener("pointerdown", handlePointerDown);
     canvas.addEventListener("pointermove", handlePointerMove);
     canvas.addEventListener("pointerup", handlePointerUp);
+    canvas.addEventListener("pointercancel", handlePointerCancel);
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     canvas.addEventListener("contextmenu", handleContextMenu);
 
@@ -594,6 +669,7 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
       canvas.removeEventListener("pointerdown", handlePointerDown);
       canvas.removeEventListener("pointermove", handlePointerMove);
       canvas.removeEventListener("pointerup", handlePointerUp);
+      canvas.removeEventListener("pointercancel", handlePointerCancel);
       canvas.removeEventListener("wheel", handleWheel);
       canvas.removeEventListener("contextmenu", handleContextMenu);
     };
@@ -742,32 +818,6 @@ const simplifyStrokePoints = (points) => {
 };
 
 /**
- * Safely evaluates a mathematical expression string (e.g. "sin(x) + x^2") for a given x value.
- */
-const evaluateMathExpression = (exprStr, xVal) => {
-  if (!exprStr || typeof exprStr !== "string") return null;
-  try {
-    let sanitized = exprStr
-      .replace(/\^/g, "**")
-      .replace(/\bsin\b/g, "Math.sin")
-      .replace(/\bcos\b/g, "Math.cos")
-      .replace(/\btan\b/g, "Math.tan")
-      .replace(/\bsqrt\b/g, "Math.sqrt")
-      .replace(/\babs\b/g, "Math.abs")
-      .replace(/\bexp\b/g, "Math.exp")
-      .replace(/\b(log|ln)\b/g, "Math.log")
-      .replace(/\bpi\b/gi, "Math.PI")
-      .replace(/\be\b/g, "Math.E");
-
-    const fn = new Function("x", `return ${sanitized};`);
-    const val = fn(xVal);
-    return (typeof val === "number" && !isNaN(val) && isFinite(val)) ? val : null;
-  } catch (err) {
-    return null;
-  }
-};
-
-/**
  * Converts a plot_function command into a collection of stroke paths (axes, ticks, grid, and curve).
  */
 const convertPlotCommandToStrokes = (cmd, inkColor) => {
@@ -850,19 +900,19 @@ const convertPlotCommandToStrokes = (cmd, inkColor) => {
     });
   }
 
-  // 4. Sample and Evaluate the Function Curve over 120 points
+  // 4. Sample and Evaluate the Function Curve over 120 points using safe evaluator
   const steps = 120;
   let currentCurvePoints = [];
 
   for (let i = 0; i <= steps; i++) {
     const xm = xMin + (i / steps) * (xMax - xMin);
-    const ym = evaluateMathExpression(expression, xm);
+    const evalRes = evaluateMathExpression(expression, xm);
 
-    if (ym !== null && ym >= yMin && ym <= yMax) {
-      const pt = toCanvasCoords(xm, ym);
+    if (evalRes.ok && evalRes.value >= yMin && evalRes.value <= yMax) {
+      const pt = toCanvasCoords(xm, evalRes.value);
       currentCurvePoints.push(pt);
     } else {
-      // Break stroke if math expression undefined or out of range
+      // Break stroke path on mathematical discontinuities (e.g. 1/0, tan asymptote)
       if (currentCurvePoints.length > 1) {
         strokes.push({
           points: [...currentCurvePoints],

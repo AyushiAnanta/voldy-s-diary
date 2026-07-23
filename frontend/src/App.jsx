@@ -4,9 +4,7 @@ import {
   PenTool, 
   Eraser, 
   MousePointer, 
-  Undo, 
   RotateCcw, 
-  Settings,
   CircleAlert,
   HelpCircle,
   FastForward,
@@ -17,11 +15,19 @@ import {
   Type
 } from "lucide-react";
 import Canvas from "./components/Canvas.jsx";
+import { 
+  saveSessionState, 
+  loadSessionState, 
+  clearSessionState, 
+  subscribeToCrossTabSync 
+} from "./utils/storage.js";
 
 function App() {
   const canvasRef = useRef(null);
   const autoTriggerTimer = useRef(null);
-  const statusRef = useRef("ready"); // mirror of status state for use inside timers (avoids stale closures)
+  const autoSaveTimerRef = useRef(null);
+  const statusRef = useRef("ready"); // mirror of status state for use inside timers
+  const isLoadedRef = useRef(false);
   
   // React State variables
   const [theme, setTheme] = useState("arcane");
@@ -63,6 +69,71 @@ function App() {
   // List of active AI drafts overlay objects
   const [drafts, setDrafts] = useState([]);
 
+  // Load saved session on component mount
+  useEffect(() => {
+    async function restoreSession() {
+      const saved = await loadSessionState();
+      if (saved) {
+        if (saved.settings) {
+          if (saved.settings.theme) setTheme(saved.settings.theme);
+          if (saved.settings.activeTool) setActiveTool(saved.settings.activeTool);
+          if (saved.settings.reasoning) setReasoning(saved.settings.reasoning);
+        }
+        if (saved.viewport) setViewport(saved.viewport);
+        if (saved.drafts) setDrafts(saved.drafts);
+
+        if (canvasRef.current) {
+          canvasRef.current.loadCanvasState(saved.strokes || [], saved.viewport || { panX: 0, panY: 0, zoom: 1.0 });
+        }
+      }
+      isLoadedRef.current = true;
+    }
+    restoreSession();
+  }, []);
+
+  // Subscribe to cross-tab synchronization with active-drawing lock check
+  useEffect(() => {
+    const unsubscribe = subscribeToCrossTabSync(
+      (remoteState) => {
+        if (!remoteState) return;
+        if (remoteState.settings?.theme) setTheme(remoteState.settings.theme);
+        if (remoteState.settings?.reasoning) setReasoning(remoteState.settings.reasoning);
+        if (remoteState.viewport) setViewport(remoteState.viewport);
+        if (remoteState.drafts) setDrafts(remoteState.drafts);
+        if (canvasRef.current) {
+          canvasRef.current.loadCanvasState(remoteState.strokes || [], remoteState.viewport);
+        }
+      },
+      () => canvasRef.current?.isDrawingActive()
+    );
+    return () => unsubscribe();
+  }, []);
+
+  // Trigger debounced auto-save whenever canvas strokes, drafts, viewport, or settings change
+  const triggerAutoSave = () => {
+    if (!isLoadedRef.current || !canvasRef.current) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+    autoSaveTimerRef.current = setTimeout(async () => {
+      const canvasData = canvasRef.current.getCanvasState();
+      const res = await saveSessionState({
+        strokes: canvasData.strokes,
+        viewport: canvasData.viewport,
+        drafts: drafts,
+        settings: { theme, activeTool, reasoning }
+      });
+
+      if (res && res.prunedStrokes) {
+        showError("Storage space critical: Oldest stroke history was compacted to preserve current session.");
+      }
+    }, 600);
+  };
+
+  // Trigger save on state updates
+  useEffect(() => {
+    triggerAutoSave();
+  }, [theme, activeTool, reasoning, drafts, viewport]);
+
   // Apply visual theme to the document body element
   useEffect(() => {
     document.body.setAttribute("data-theme", theme);
@@ -82,6 +153,8 @@ function App() {
 
   // Auto-trigger AI after 2.5s of drawing inactivity
   const handleDrawFinished = () => {
+    triggerAutoSave(); // Auto-save after stroke release
+    
     // Clear any existing pending timer
     if (autoTriggerTimer.current) {
       clearTimeout(autoTriggerTimer.current);
@@ -126,7 +199,7 @@ function App() {
     }
 
     try {
-      // 2. Fetch structured drawing/text commands from Express server
+      // 2. Fetch structured drawing/text commands from Express server (passing reasoning level)
       const response = await fetch("/api/canvas-ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -138,6 +211,7 @@ function App() {
           cropHeight: cropData.cropHeight,
           text: customPromptText,
           mode: mode,
+          reasoning: reasoning, // Threaded reasoning effort parameter to backend
           intent: (mode === "typeset" || activeTool === "lasso" || cropData.selectionContext) ? "typeset" : (mode === "plot" ? "plot" : "auto")
         })
       });
@@ -208,10 +282,11 @@ function App() {
     }
   };
 
-  const handleClear = () => {
-    if (window.confirm("Clear the entire canvas workspace and drafts?")) {
+  const handleClear = async () => {
+    if (window.confirm("Clear the entire canvas workspace and saved session?")) {
       canvasRef.current.clearCanvas();
       setDrafts([]);
+      await clearSessionState();
     }
   };
 
@@ -256,11 +331,12 @@ function App() {
             {status === "writing" && <><span className="loading-spinner"></span> Writing...</>}
           </div>
 
-          {/* Reasoning Settings */}
+          {/* Reasoning Settings (Threaded to Gemini SDK Parameters) */}
           <select 
             className="control-btn" 
             value={reasoning} 
             onChange={(e) => setReasoning(e.target.value)}
+            title="Reasoning Effort: Adjusts Gemini depth & token budget"
           >
             <option value="none">Effort: None</option>
             <option value="low">Effort: Low</option>
@@ -283,7 +359,7 @@ function App() {
         </div>
       </header>
 
-      {/* Graceful Toast notification banner (replaces window.alert) */}
+      {/* Graceful Toast notification banner */}
       {errorMessage && (
         <div className="toast-notification chrome-container" style={{
           position: "fixed",
@@ -431,7 +507,7 @@ function App() {
         <button 
           className="tool-item" 
           onClick={handleClear}
-          title="Clear Board"
+          title="Clear Board & Saved Session"
         >
           <RotateCcw size={18} />
         </button>

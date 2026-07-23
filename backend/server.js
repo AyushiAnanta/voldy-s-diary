@@ -89,7 +89,7 @@ function fileToGenerativePart(base64Data, mimeType) {
 
 app.post("/api/canvas-ai", async (req, res) => {
   try {
-    const { image, text, intent, cropX, cropY, cropWidth, cropHeight, mode } = req.body;
+    const { image, text, intent, cropX, cropY, cropWidth, cropHeight, mode, reasoning } = req.body;
 
     if (!genAI) {
       return res.status(500).json({ 
@@ -98,11 +98,54 @@ app.post("/api/canvas-ai", async (req, res) => {
       });
     }
 
+    // Map Reasoning Effort to Gemini SDK generationConfig parameters & prompt instructions.
+    // Includes thinkingConfig.thinkingBudget to explicitly control/disable internal thinking tokens per tier.
+    const reasoningLevel = reasoning || "medium";
+    let temperature = 0.4;
+    let maxOutputTokens = 4096;
+    let topP = 0.95;
+    let thinkingBudget = 2048;
+    let reasoningDirective = "";
+
+    if (reasoningLevel === "none") {
+      temperature = 0.1;
+      maxOutputTokens = 1024;
+      topP = 0.8;
+      thinkingBudget = 0; // Disable thinking tokens for fast direct responses
+      reasoningDirective = "\n\n[Reasoning Effort: NONE. Output the minimal direct response with zero preamble or extra words.]";
+    } else if (reasoningLevel === "low") {
+      temperature = 0.2;
+      maxOutputTokens = 2048;
+      topP = 0.85;
+      thinkingBudget = 512; // Capped brief thinking budget
+      reasoningDirective = "\n\n[Reasoning Effort: LOW. Provide a brief, direct clue or single-step continuation.]";
+    } else if (reasoningLevel === "medium") {
+      temperature = 0.4;
+      maxOutputTokens = 4096;
+      topP = 0.95;
+      thinkingBudget = 2048; // Moderate thinking budget
+      reasoningDirective = "\n\n[Reasoning Effort: MEDIUM. Provide balanced step-by-step reasoning.]";
+    } else if (reasoningLevel === "high") {
+      temperature = 0.7;
+      maxOutputTokens = 8192;
+      topP = 0.95;
+      thinkingBudget = 4096; // Generous thinking budget for detailed math reasoning
+      reasoningDirective = "\n\n[Reasoning Effort: HIGH. Provide thorough, detailed step-by-step reasoning and mathematical concepts.]";
+    } else if (reasoningLevel === "max") {
+      temperature = 0.85;
+      maxOutputTokens = 16384;
+      topP = 0.99;
+      thinkingBudget = -1; // Unbounded / dynamic thinking budget
+      reasoningDirective = "\n\n[Reasoning Effort: MAX. Perform an exhaustive, rigorous multi-step analysis and full proof.]";
+    }
+
+    console.log(`[Canvas AI Request] Reasoning: ${reasoningLevel} | Temp: ${temperature} | MaxTokens: ${maxOutputTokens} | ThinkingBudget: ${thinkingBudget} | Mode: ${mode || 'auto'}`);
+
     // Determine system prompt based on user request intent (e.g. normalize/typeset lasso select)
     const isTypeset = (intent === "normalize" || intent === "typeset");
-    const activeSystemPrompt = isTypeset 
+    const activeSystemPrompt = (isTypeset 
       ? `${ACTIVE_SYSTEM_PROMPT_BASE}\n\n${NORMALIZE_TYPESET_POLICY}` 
-      : ACTIVE_SYSTEM_PROMPT_BASE;
+      : ACTIVE_SYSTEM_PROMPT_BASE) + reasoningDirective;
 
     // Use Gemini model (defaults to gemini-2.5-flash)
     const modelName = process.env.GEMINI_MODEL || "gemini-2.5-flash";
@@ -110,7 +153,13 @@ app.post("/api/canvas-ai", async (req, res) => {
       model: modelName,
       systemInstruction: activeSystemPrompt,
       generationConfig: {
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        temperature,
+        maxOutputTokens,
+        topP,
+        thinkingConfig: {
+          thinkingBudget
+        }
       }
     });
 
@@ -155,6 +204,11 @@ app.post("/api/canvas-ai", async (req, res) => {
     console.log(`Sending canvas-ai request to model ${modelName}...`);
     const result = await model.generateContent(parts);
     const responseText = result.response.text();
+
+    const usage = result.response.usageMetadata;
+    if (usage) {
+      console.log(`[Gemini Usage Metadata] ReasoningLevel: ${reasoningLevel} | PromptTokens: ${usage.promptTokenCount || 0} | OutputTokens: ${usage.candidatesTokenCount || 0} | ThoughtsTokens: ${usage.thoughtsTokenCount || 0} | TotalTokens: ${usage.totalTokenCount || 0}`);
+    }
 
     console.log("Raw Gemini response received:", responseText);
 
