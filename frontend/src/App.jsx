@@ -201,7 +201,7 @@ function App() {
 
     try {
       // 2. Fetch structured drawing/text commands from Express server (passing reasoning level)
-      const response = await fetch("/api/canvas-ai", {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/canvas-ai`, { 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
