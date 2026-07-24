@@ -40,10 +40,19 @@ Choose tools only from the kind of content visibly drawn in the selection:
 
 const app = express();
 
+const allowedOrigins = (process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+// always allow local dev regardless of env config
+const devOrigins = ["http://localhost:5173", "http://localhost:3888"];
+
 const corsOptions = {
   origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    if (origin.includes("vercel.app") || origin.includes("localhost")) {
+    if (!origin) return callback(null, true); // server-to-server / curl / no-origin requests
+
+    if (allowedOrigins.includes(origin) || devOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error("Not allowed by CORS"));
