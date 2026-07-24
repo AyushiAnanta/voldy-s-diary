@@ -36,6 +36,7 @@ function App() {
   const [reasoning, setReasoning] = useState("medium");
   const [status, setStatus] = useState("ready");
   const [errorMessage, setErrorMessage] = useState(null);
+  const [confirmClear, setConfirmClear] = useState(false);
   const [isOrbMenuOpen, setIsOrbMenuOpen] = useState(false);
 
   const errorTimeoutRef = useRef(null);
@@ -283,12 +284,15 @@ function App() {
     }
   };
 
-  const handleClear = async () => {
-    if (window.confirm("Clear the entire canvas workspace and saved session?")) {
-      canvasRef.current.clearCanvas();
-      setDrafts([]);
-      await clearSessionState();
-    }
+  const handleClear = () => {
+    setConfirmClear(true);
+  };
+
+  const executeClear = async () => {
+    setConfirmClear(false);
+    canvasRef.current.clearCanvas();
+    setDrafts([]);
+    await clearSessionState();
   };
 
   const handleAcceptDraft = (id) => {
@@ -401,6 +405,67 @@ function App() {
             }}
           >
             ✕
+          </button>
+        </div>
+      )}
+
+      {/* Confirmation toast for clearing canvas — replaces window.confirm() */}
+      {confirmClear && (
+        <div className="toast-notification chrome-container" style={{
+          position: "fixed",
+          top: "96px",
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 10000,
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+          padding: "12px 20px",
+          background: "rgba(251, 191, 36, 0.15)",
+          border: "1px solid rgba(251, 191, 36, 0.45)",
+          color: "#fbbf24",
+          borderRadius: "10px",
+          boxShadow: "0 10px 30px rgba(0, 0, 0, 0.5)",
+          fontSize: "14px",
+          maxWidth: "90%",
+          width: "max-content",
+          pointerEvents: "auto",
+          animation: "fade-in 0.25s ease"
+        }}>
+          <CircleAlert size={16} />
+          <span>Clear entire canvas workspace and saved session?</span>
+          <button
+            onClick={executeClear}
+            style={{
+              background: "rgba(239, 68, 68, 0.25)",
+              border: "1px solid rgba(239, 68, 68, 0.5)",
+              color: "#f87171",
+              cursor: "pointer",
+              marginLeft: "8px",
+              padding: "4px 14px",
+              borderRadius: "6px",
+              fontSize: "13px",
+              fontWeight: "600",
+              fontFamily: "inherit"
+            }}
+          >
+            Yes, clear
+          </button>
+          <button
+            onClick={() => setConfirmClear(false)}
+            style={{
+              background: "transparent",
+              border: "1px solid rgba(255, 255, 255, 0.2)",
+              color: "var(--color-text)",
+              cursor: "pointer",
+              padding: "4px 14px",
+              borderRadius: "6px",
+              fontSize: "13px",
+              fontWeight: "600",
+              fontFamily: "inherit"
+            }}
+          >
+            Cancel
           </button>
         </div>
       )}
