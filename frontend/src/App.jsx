@@ -15,6 +15,7 @@ import {
   Type
 } from "lucide-react";
 import Canvas from "./components/Canvas.jsx";
+import VoldemortSigil from "./components/VoldemortSigil.jsx";
 import { 
   saveSessionState, 
   loadSessionState, 
@@ -317,7 +318,9 @@ function App() {
       {/* 1. Glassmorphic Top Controls Bar */}
       <header className="topbar chrome-container">
         <div className="brand-section">
-          <div className="brand-sigil">✨</div>
+          <div className="brand-sigil-portrait" style={{ display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }} title="Voldemort Sigil">
+            <VoldemortSigil size={38} />
+          </div>
           <div className="brand-title">
             <span>Voldy's</span><strong>Diary</strong>
           </div>

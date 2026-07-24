@@ -1,0 +1,162 @@
+<svg
+  width="200"
+  height="230"
+  viewBox="0 0 200 230"
+  fill="none"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <defs>
+    {/* Glow filters for eyes and magical aura */}
+    <filter id="voldyEyeGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+    
+    <filter id="voldyAuraGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    {/* Gradients */}
+    <radialGradient id="voldyBgAura" cx="50%" cy="65%" r="60%">
+      <stop offset="0%" stop-color="#00f5d4" stop-opacity="0.8" />
+      <stop offset="40%" stop-color="#00b4d8" stop-opacity="0.5" />
+      <stop offset="75%" stop-color="#051923" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#02080c" stop-opacity="1" />
+    </radialGradient>
+
+    <linearGradient id="voldySkinGrad" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#e8f1ee" />
+      <stop offset="35%" stop-color="#c5d3ce" />
+      <stop offset="70%" stop-color="#96a8a2" />
+      <stop offset="100%" stop-color="#5d6e68" />
+    </linearGradient>
+
+    <linearGradient id="voldySkinShadow" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#b4c4bf" />
+      <stop offset="50%" stop-color="#7a8c87" />
+      <stop offset="100%" stop-color="#374541" />
+    </linearGradient>
+
+    <radialGradient id="voldyEyeIris" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#b8fff7" />
+      <stop offset="45%" stop-color="#00f5d4" />
+      <stop offset="85%" stop-color="#0077b6" />
+      <stop offset="100%" stop-color="#03045e" />
+    </radialGradient>
+
+    <linearGradient id="voldyRobe" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0d232a" />
+      <stop offset="50%" stop-color="#051116" />
+      <stop offset="100%" stop-color="#010508" />
+    </linearGradient>
+
+    <linearGradient id="voldyBorderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f5d4" />
+      <stop offset="50%" stop-color="#0077b6" />
+      <stop offset="100%" stop-color="#7161ef" />
+    </linearGradient>
+  </defs>
+
+  {/* Oval Frame Clip & Background Aura */}
+  <g>
+    <ellipse cx="100" cy="115" rx="85" ry="105" fill="url(#voldyBgAura)" />
+    
+    {/* Magical cyan floating particles */}
+    <circle cx="40" cy="140" r="3" fill="#00f5d4" opacity="0.85" filter="url(#voldyEyeGlow)" />
+    <circle cx="55" cy="165" r="4.5" fill="#70e0d0" opacity="0.9" filter="url(#voldyEyeGlow)" />
+    <circle cx="150" cy="130" r="3.5" fill="#00f5d4" opacity="0.8" filter="url(#voldyEyeGlow)" />
+    <circle cx="160" cy="155" r="5" fill="#00e5ff" opacity="0.85" filter="url(#voldyEyeGlow)" />
+    <circle cx="135" cy="175" r="3" fill="#80ffea" opacity="0.9" filter="url(#voldyEyeGlow)" />
+    <circle cx="68" cy="180" r="2.5" fill="#00f5d4" opacity="0.75" filter="url(#voldyEyeGlow)" />
+    <circle cx="32" cy="110" r="4" fill="#00e5ff" opacity="0.7" filter="url(#voldyEyeGlow)" />
+    <circle cx="168" cy="95" r="3.5" fill="#70e0d0" opacity="0.7" filter="url(#voldyEyeGlow)" />
+    <circle cx="85" cy="20" r="3" fill="#00f5d4" opacity="0.6" filter="url(#voldyEyeGlow)" />
+    <circle cx="120" cy="25" r="2" fill="#80ffea" opacity="0.7" filter="url(#voldyEyeGlow)" />
+  </g>
+
+  {/* High Robe Collar & Chest Silhouette */}
+  <path
+    d="M 18 225 C 38 180, 75 158, 100 158 C 125 158, 162 180, 182 225 Z"
+    fill="url(#voldyRobe)"
+  />
+  {/* Robe Collar Detail Lines */}
+  <path d="M 78 158 L 100 185 L 122 158" stroke="#00f5d4" stroke-width="1.8" opacity="0.5" fill="none" />
+  <path d="M 100 158 L 100 225" stroke="#030a0d" stroke-width="2.5" opacity="0.7" />
+
+  {/* Neck */}
+  <path d="M 82 125 C 80 150, 84 165, 85 178 L 115 178 C 116 165, 120 150, 118 125 Z" fill="url(#voldySkinShadow)" />
+
+  {/* Pointed Ears */}
+  {/* Left Ear */}
+  <path d="M 68 82 C 48 58, 46 82, 62 108 C 65 102, 67 92, 68 82 Z" fill="url(#voldySkinGrad)" stroke="#3e4f49" stroke-width="1.2" />
+  {/* Right Ear */}
+  <path d="M 132 82 C 152 58, 154 82, 138 108 C 135 102, 133 92, 132 82 Z" fill="url(#voldySkinGrad)" stroke="#3e4f49" stroke-width="1.2" />
+
+  {/* Head & Skull Shape */}
+  <path
+    d="M 68 78 C 65 38, 80 10, 100 10 C 120 10, 135 38, 132 78 C 130 108, 122 142, 100 145 C 78 142, 70 108, 68 78 Z"
+    fill="url(#voldySkinGrad)"
+    stroke="#2c3a35"
+    stroke-width="1.5"
+  />
+
+  {/* Brow Ridge & Temple Shadows */}
+  <path d="M 72 63 Q 100 66 128 63" stroke="#44544e" stroke-width="3" fill="none" opacity="0.75" />
+  <path d="M 75 73 Q 100 80 125 73" stroke="#2e3c37" stroke-width="4" fill="none" opacity="0.55" />
+  
+  {/* Forehead Vein / Crack details */}
+  <path d="M 85 28 Q 90 38 87 48" stroke="#6b7c76" stroke-width="0.9" opacity="0.65" fill="none" />
+  <path d="M 115 23 Q 112 33 117 46" stroke="#6b7c76" stroke-width="0.9" opacity="0.65" fill="none" />
+  <path d="M 96 18 L 98 30" stroke="#6b7c76" stroke-width="0.8" opacity="0.5" fill="none" />
+
+  {/* Dark Eye Sockets */}
+  <ellipse cx="84" cy="76" rx="13" ry="9" fill="#0b1310" />
+  <ellipse cx="116" cy="76" rx="13" ry="9" fill="#0b1310" />
+
+  {/* Glowing Cyan Eyes */}
+  <ellipse cx="84" cy="75" rx="8" ry="6" fill="url(#voldyEyeIris)" filter="url(#voldyEyeGlow)" />
+  <ellipse cx="116" cy="75" rx="8" ry="6" fill="url(#voldyEyeIris)" filter="url(#voldyEyeGlow)" />
+
+  {/* Pupils (Snake Slits) */}
+  <ellipse cx="84" cy="75" rx="1.5" ry="5.5" fill="#010a0f" />
+  <ellipse cx="116" cy="75" rx="1.5" ry="5.5" fill="#010a0f" />
+
+  {/* Intense Eye Catchlight Specular Dots */}
+  <circle cx="82.5" cy="73" r="1.5" fill="#ffffff" opacity="0.95" />
+  <circle cx="114.5" cy="73" r="1.5" fill="#ffffff" opacity="0.95" />
+
+  {/* Nose Bridge Contour & Cheekbones */}
+  <path d="M 100 66 L 96 98 L 88 110 L 100 113 L 112 110 L 104 98 Z" fill="#687872" opacity="0.45" />
+
+  {/* Snake Slit Nostrils */}
+  <path d="M 94 103 Q 96 110 93 113" stroke="#0b110e" stroke-width="2.5" stroke-linecap="round" fill="none" />
+  <path d="M 106 103 Q 104 110 107 113" stroke="#0b110e" stroke-width="2.5" stroke-linecap="round" fill="none" />
+
+  {/* Thin Lips / Smirk */}
+  <path d="M 88 126 Q 100 129 112 125" stroke="#1d2824" stroke-width="2.2" stroke-linecap="round" fill="none" />
+  <path d="M 92 126 Q 100 131 108 126" stroke="#090f0c" stroke-width="1.2" stroke-linecap="round" fill="none" />
+
+  {/* Glowing Border Frame */}
+  <ellipse
+    cx="100"
+    cy="115"
+    rx="85"
+    ry="105"
+    stroke="url(#voldyBorderGrad)"
+    stroke-width="3.5"
+    fill="none"
+    filter="url(#voldyAuraGlow)"
+    opacity="0.9"
+  />
+  <ellipse
+    cx="100"
+    cy="115"
+    rx="88"
+    ry="108"
+    stroke="#061217"
+    stroke-width="2"
+    fill="none"
+    opacity="0.8"
+  />
+</svg>
