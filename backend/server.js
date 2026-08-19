@@ -96,6 +96,92 @@ function fileToGenerativePart(base64Data, mimeType) {
   };
 }
 
+const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+
+/**
+ * Fallback helper to call OpenRouter's Vision API when Gemini fails.
+ */
+async function callOpenRouterVision({ systemPrompt, promptText, base64Data, mimeType, temperature, maxOutputTokens }) {
+  const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+  if (!openRouterApiKey) {
+    throw new Error("OPENROUTER_API_KEY is not defined in environment variables for fallback execution.");
+  }
+
+  // Cap max_tokens to 2048 for OpenRouter free tier models
+  const openRouterMaxTokens = Math.min(maxOutputTokens || 2048, 2048);
+
+  // Fallback chain: Dots3-Note -> Gemma
+  const candidateModels = [];
+  if (process.env.OPENROUTER_MODEL) {
+    candidateModels.push(process.env.OPENROUTER_MODEL);
+  }
+  candidateModels.push(
+    "dots-studio/dots-3-note-preview:free",
+    "google/gemma-4-26b-a4b-it:free"
+  );
+
+  const userContent = [{ type: "text", text: promptText }];
+  if (base64Data) {
+    userContent.push({
+      type: "image_url",
+      image_url: { url: `data:${mimeType};base64,${base64Data}` }
+    });
+  }
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userContent }
+  ];
+
+  let lastError = null;
+
+  for (const modelId of candidateModels) {
+    try {
+      console.log(`[OpenRouter Fallback] Attempting vision request via candidate: ${modelId}...`);
+
+      const response = await fetch(OPENROUTER_API_URL, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${openRouterApiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://voldy-s-diary-q6gj.vercel.app",
+          "X-Title": "Voldy's Diary"
+        },
+        body: JSON.stringify({
+          model: modelId,
+          messages,
+          temperature,
+          max_tokens: openRouterMaxTokens,
+          response_format: { type: "json_object" }
+        })
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.warn(`[OpenRouter Candidate Rejected] Model: ${modelId} | HTTP Status: ${response.status}\n  └── Response Body: ${errorBody}\n  └── Moving to next candidate in fallback chain...`);
+        lastError = new Error(`OpenRouter API HTTP ${response.status} (${modelId}): ${errorBody}`);
+        continue;
+      }
+
+      const data = await response.json();
+      const content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+      if (!content) {
+        console.warn(`[OpenRouter Candidate Empty] Model ${modelId} returned empty choice content. Moving to next candidate...`);
+        lastError = new Error(`OpenRouter model ${modelId} returned empty content.`);
+        continue;
+      }
+
+      console.log(`[OpenRouter Fallback Succeeded] Responded via model: ${modelId}`);
+      return { responseText: content, usedModel: `openrouter/${modelId}` };
+    } catch (err) {
+      console.warn(`[OpenRouter Candidate Exception] Model: ${modelId}\n  └── Error: ${err.stack || err.message || err}\n  └── Moving to next candidate in fallback chain...`);
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error("All OpenRouter vision candidate models failed.");
+}
+
 app.post("/api/canvas-ai", async (req, res) => {
   try {
     const { image, text, intent, cropX, cropY, cropWidth, cropHeight, mode, reasoning } = req.body;
@@ -195,31 +281,56 @@ app.post("/api/canvas-ai", async (req, res) => {
 
     parts.push(promptText);
 
+    let mimeType = "image/png";
+    let base64Data = null;
+
     // Canvas image visual attachment
     if (image) {
       // Decode data URL prefix if present e.g. data:image/webp;base64,...
       const base64Matches = image.match(/^data:(image\/[a-z]+);base64,(.+)$/);
-      let mimeType = "image/png";
-      let base64Data = image;
       
       if (base64Matches) {
         mimeType = base64Matches[1];
         base64Data = base64Matches[2];
+      } else {
+        base64Data = image;
       }
       
       parts.push(fileToGenerativePart(base64Data, mimeType));
     }
 
-    console.log(`Sending canvas-ai request to model ${modelName}...`);
-    const result = await model.generateContent(parts);
-    const responseText = result.response.text();
+    let responseText = "";
+    let usedModel = modelName;
 
-    const usage = result.response.usageMetadata;
-    if (usage) {
-      console.log(`[Gemini Usage Metadata] ReasoningLevel: ${reasoningLevel} | PromptTokens: ${usage.promptTokenCount || 0} | OutputTokens: ${usage.candidatesTokenCount || 0} | ThoughtsTokens: ${usage.thoughtsTokenCount || 0} | TotalTokens: ${usage.totalTokenCount || 0}`);
+    try {
+      console.log(`Sending canvas-ai request to model ${modelName}...`);
+      const result = await model.generateContent(parts);
+      responseText = result.response.text();
+
+      const usage = result.response.usageMetadata;
+      if (usage) {
+        console.log(`[Gemini Usage Metadata] ReasoningLevel: ${reasoningLevel} | PromptTokens: ${usage.promptTokenCount || 0} | OutputTokens: ${usage.candidatesTokenCount || 0} | ThoughtsTokens: ${usage.thoughtsTokenCount || 0} | TotalTokens: ${usage.totalTokenCount || 0}`);
+      }
+      console.log("Raw Gemini response received:", responseText);
+    } catch (geminiError) {
+      console.warn(`\n[AI ENGINE FAILURE ALERT] Primary Model (${modelName}) threw an exception.`);
+      console.warn(`  Reason: ${geminiError.message || geminiError}`);
+      console.warn(`  Full Error Trace: ${geminiError.stack || 'N/A'}`);
+      console.warn(`  Action: Initiating OpenRouter Vision fallback chain (Dots3-Note -> Gemma 4)...`);
+      
+      const openRouterRes = await callOpenRouterVision({
+        systemPrompt: activeSystemPrompt,
+        promptText,
+        base64Data,
+        mimeType,
+        temperature,
+        maxOutputTokens
+      });
+
+      responseText = openRouterRes.responseText;
+      usedModel = openRouterRes.usedModel;
+      console.log(`\n[AI ENGINE FALLBACK RESOLVED] Successfully answered via: ${usedModel}\n`);
     }
-
-    console.log("Raw Gemini response received:", responseText);
 
     // Parse the strict JSON return format expected by PenEcho client
     let parsedResult;
@@ -237,7 +348,7 @@ app.post("/api/canvas-ai", async (req, res) => {
 
       parsedResult = JSON.parse(cleanedText);
     } catch (parseError) {
-      console.warn("Failed to parse Gemini response as JSON directly, wrapping as fallback", parseError);
+      console.warn("Failed to parse response as JSON directly, wrapping as fallback", parseError);
       parsedResult = {
         intent: "answer",
         observedText: "",
@@ -256,6 +367,7 @@ app.post("/api/canvas-ai", async (req, res) => {
       };
     }
 
+    parsedResult.provider = usedModel;
     res.json(parsedResult);
 
   } catch (error) {
