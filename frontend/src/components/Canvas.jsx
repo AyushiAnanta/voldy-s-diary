@@ -157,15 +157,15 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
         state.hasLasso = false;
         state.lassoBounds = null;
       } else {
-        // Temporal segmentation: only consider strokes drawn since last AI call
+        // Temporal segmentation: only crop strokes drawn since the last AI call
         targetStrokes = allStrokes.filter(s => s.timestamp > state.lastAiTriggerTime);
 
-        // Fallback: if no new strokes since last call, use the most recent 3
+        // Fallback: if no new strokes since last call, crop the most recent 3 strokes
         if (targetStrokes.length === 0) {
           targetStrokes = allStrokes.slice(-3);
         }
 
-        // Calculate bounding box of target strokes
+        // Calculate bounding box of recent target strokes
         targetStrokes.forEach(stroke => {
           stroke.points.forEach(pt => {
             if (pt.x < minX) minX = pt.x;

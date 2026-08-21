@@ -170,7 +170,7 @@ export default function App() {
       if (statusRef.current === "ready" && canvasRef.current) {
         handleTriggerAI();
       }
-    }, 2500);
+    }, 3500);
   };
 
   // Triggers API pipeline request to the backend server with optional prompt modes
@@ -306,13 +306,16 @@ export default function App() {
         // Bake the vector shape into permanent canvas strokes
         canvasRef.current.bakeDrawCommand(draft.rawCommand);
         setDrafts(prev => prev.filter(d => d.id !== id));
+        triggerAutoSave();
       } else if (draft.rawCommand.tool === "plot_function") {
         // Bake the function plot curve & axes into permanent canvas strokes
         canvasRef.current.bakePlotCommand(draft.rawCommand);
         setDrafts(prev => prev.filter(d => d.id !== id));
+        triggerAutoSave();
       } else {
         // Keep draft on screen permanently by marking it accepted
         setDrafts(prev => prev.map(d => d.id === id ? { ...d, accepted: true } : d));
+        triggerAutoSave();
       }
     }
   };
