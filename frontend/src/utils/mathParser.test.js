@@ -91,3 +91,40 @@ describe("Safe Math Parser Security & Functionality Test Suite", () => {
     assert.strictEqual(res.reason, "invalid_syntax");
   });
 });
+
+import { normalizeReasoningLevel, normalizeTheme } from "./storage.js";
+
+describe("State Normalization & Backward Compatibility Test Suite", () => {
+  test("Normalizes legacy reasoning levels: 'none', 'low', 'medium' -> 'normal'", () => {
+    assert.strictEqual(normalizeReasoningLevel("none"), "normal");
+    assert.strictEqual(normalizeReasoningLevel("low"), "normal");
+    assert.strictEqual(normalizeReasoningLevel("medium"), "normal");
+  });
+
+  test("Normalizes legacy reasoning levels: 'high', 'max' -> 'deep'", () => {
+    assert.strictEqual(normalizeReasoningLevel("high"), "deep");
+    assert.strictEqual(normalizeReasoningLevel("max"), "deep");
+  });
+
+  test("Preserves canonical reasoning levels: 'normal', 'deep'", () => {
+    assert.strictEqual(normalizeReasoningLevel("normal"), "normal");
+    assert.strictEqual(normalizeReasoningLevel("deep"), "deep");
+  });
+
+  test("Guards against invalid/non-string inputs & prototype pollution in reasoning", () => {
+    assert.strictEqual(normalizeReasoningLevel("__proto__"), "normal");
+    assert.strictEqual(normalizeReasoningLevel("constructor"), "normal");
+    assert.strictEqual(normalizeReasoningLevel(null), "normal");
+    assert.strictEqual(normalizeReasoningLevel({}), "normal");
+  });
+
+  test("Normalizes legacy themes: 'scifi', 'research' -> 'arcane'", () => {
+    assert.strictEqual(normalizeTheme("scifi"), "arcane");
+    assert.strictEqual(normalizeTheme("research"), "arcane");
+  });
+
+  test("Preserves valid themes: 'arcane', 'studio'", () => {
+    assert.strictEqual(normalizeTheme("arcane"), "arcane");
+    assert.strictEqual(normalizeTheme("studio"), "studio");
+  });
+});

@@ -194,47 +194,35 @@ app.post("/api/canvas-ai", async (req, res) => {
     }
 
     // Map Reasoning Effort to Gemini SDK generationConfig parameters & prompt instructions.
-    // Includes thinkingConfig.thinkingBudget to explicitly control/disable internal thinking tokens per tier.
-    const reasoningLevel = reasoning || "medium";
-    let temperature = 0.4;
-    let maxOutputTokens = 4096;
-    let topP = 0.95;
-    let thinkingBudget = 2048;
-    let reasoningDirective = "";
+    // Safe normalization dictionary protecting against non-strings, legacy levels, and prototype pollution.
+    const REASONING_MAP = {
+      none: "normal",
+      low: "normal",
+      medium: "normal",
+      high: "deep",
+      max: "deep",
+      normal: "normal",
+      deep: "deep"
+    };
 
-    if (reasoningLevel === "none") {
-      temperature = 0.1;
-      maxOutputTokens = 1024;
-      topP = 0.8;
-      thinkingBudget = 0; // Disable thinking tokens for fast direct responses
-      reasoningDirective = "\n\n[Reasoning Effort: NONE. Output the minimal direct response with zero preamble or extra words.]";
-    } else if (reasoningLevel === "low") {
-      temperature = 0.2;
-      maxOutputTokens = 2048;
-      topP = 0.85;
-      thinkingBudget = 512; // Capped brief thinking budget
-      reasoningDirective = "\n\n[Reasoning Effort: LOW. Provide a brief, direct clue or single-step continuation.]";
-    } else if (reasoningLevel === "medium") {
-      temperature = 0.4;
-      maxOutputTokens = 4096;
-      topP = 0.95;
-      thinkingBudget = 2048; // Moderate thinking budget
-      reasoningDirective = "\n\n[Reasoning Effort: MEDIUM. Provide balanced step-by-step reasoning.]";
-    } else if (reasoningLevel === "high") {
+    const rawReasoning = typeof reasoning === "string" ? reasoning : "normal";
+    const reasoningLevel = Object.hasOwn(REASONING_MAP, rawReasoning) ? REASONING_MAP[rawReasoning] : "normal";
+
+    let temperature = 0.2;
+    let maxOutputTokens = 2048;
+    let topP = 0.85;
+    let thinkingBudget = 512; // Snappy brief thinking budget for normal tier
+    let reasoningDirective = "\n\n[Reasoning Effort: NORMAL. Output direct response with concise reasoning.]";
+
+    if (reasoningLevel === "deep") {
       temperature = 0.7;
       maxOutputTokens = 8192;
       topP = 0.95;
-      thinkingBudget = 4096; // Generous thinking budget for detailed math reasoning
-      reasoningDirective = "\n\n[Reasoning Effort: HIGH. Provide thorough, detailed step-by-step reasoning and mathematical concepts.]";
-    } else if (reasoningLevel === "max") {
-      temperature = 0.85;
-      maxOutputTokens = 16384;
-      topP = 0.99;
-      thinkingBudget = -1; // Unbounded / dynamic thinking budget
-      reasoningDirective = "\n\n[Reasoning Effort: MAX. Perform an exhaustive, rigorous multi-step analysis and full proof.]";
+      thinkingBudget = -1; // Unbounded / dynamic thinking budget for deep reasoning
+      reasoningDirective = "\n\n[Reasoning Effort: DEEP. Provide thorough, detailed step-by-step reasoning and mathematical concepts.]";
     }
 
-    console.log(`[Canvas AI Request] Reasoning: ${reasoningLevel} | Temp: ${temperature} | MaxTokens: ${maxOutputTokens} | ThinkingBudget: ${thinkingBudget} | Mode: ${mode || 'auto'}`);
+    console.log(`[Canvas AI Request] Reasoning: ${reasoningLevel} (raw: ${reasoning}) | Temp: ${temperature} | MaxTokens: ${maxOutputTokens} | ThinkingBudget: ${thinkingBudget} | Mode: ${mode || 'auto'}`);
 
     // Determine system prompt based on user request intent (e.g. normalize/typeset lasso select)
     const isTypeset = (intent === "normalize" || intent === "typeset");

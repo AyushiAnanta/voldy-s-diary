@@ -20,10 +20,14 @@ import {
   saveSessionState, 
   loadSessionState, 
   clearSessionState, 
-  subscribeToCrossTabSync 
+  subscribeToCrossTabSync,
+  normalizeReasoningLevel,
+  normalizeTheme
 } from "./utils/storage.js";
 
-function App() {
+const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+export default function App() {
   const canvasRef = useRef(null);
   const autoTriggerTimer = useRef(null);
   const autoSaveTimerRef = useRef(null);
@@ -33,7 +37,7 @@ function App() {
   // React State variables
   const [theme, setTheme] = useState("arcane");
   const [activeTool, setActiveTool] = useState("pen");
-  const [reasoning, setReasoning] = useState("medium");
+  const [reasoning, setReasoning] = useState("normal");
   const [status, setStatus] = useState("ready");
   const [errorMessage, setErrorMessage] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -77,9 +81,9 @@ function App() {
       const saved = await loadSessionState();
       if (saved) {
         if (saved.settings) {
-          if (saved.settings.theme) setTheme(saved.settings.theme);
+          if (saved.settings.theme) setTheme(normalizeTheme(saved.settings.theme));
           if (saved.settings.activeTool) setActiveTool(saved.settings.activeTool);
-          if (saved.settings.reasoning) setReasoning(saved.settings.reasoning);
+          if (saved.settings.reasoning) setReasoning(normalizeReasoningLevel(saved.settings.reasoning));
         }
         if (saved.viewport) setViewport(saved.viewport);
         if (saved.drafts) setDrafts(saved.drafts);
@@ -98,8 +102,8 @@ function App() {
     const unsubscribe = subscribeToCrossTabSync(
       (remoteState) => {
         if (!remoteState) return;
-        if (remoteState.settings?.theme) setTheme(remoteState.settings.theme);
-        if (remoteState.settings?.reasoning) setReasoning(remoteState.settings.reasoning);
+        if (remoteState.settings?.theme) setTheme(normalizeTheme(remoteState.settings.theme));
+        if (remoteState.settings?.reasoning) setReasoning(normalizeReasoningLevel(remoteState.settings.reasoning));
         if (remoteState.viewport) setViewport(remoteState.viewport);
         if (remoteState.drafts) setDrafts(remoteState.drafts);
         if (canvasRef.current) {
@@ -345,11 +349,8 @@ function App() {
             onChange={(e) => setReasoning(e.target.value)}
             title="Reasoning Effort: Adjusts Gemini depth & token budget"
           >
-            <option value="none">Effort: None</option>
-            <option value="low">Effort: Low</option>
-            <option value="medium">Effort: Medium</option>
-            <option value="high">Effort: High</option>
-            <option value="max">Effort: Max</option>
+            <option value="normal">⚡ Normal (Fast)</option>
+            <option value="deep">🧠 Deep (Heightened)</option>
           </select>
 
           {/* Theme Selector */}
@@ -358,10 +359,8 @@ function App() {
             value={theme} 
             onChange={(e) => setTheme(e.target.value)}
           >
-            <option value="arcane">Arcane</option>
-            <option value="scifi">Sci-fi</option>
-            <option value="research">Research</option>
-            <option value="studio">Studio</option>
+            <option value="arcane">Arcane (Parchment)</option>
+            <option value="studio">Studio (Dark Void)</option>
           </select>
         </div>
       </header>
@@ -656,5 +655,3 @@ function App() {
     </div>
   );
 }
-
-export default App;

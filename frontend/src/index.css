@@ -44,6 +44,7 @@ body[data-theme="arcane"] {
   --sigil-glow: rgba(213, 189, 175, 0.3);
 }
 
+/* DEPRECATED THEMES (v1.1.0) - Scheduled for complete deletion on 2026-09-30
 body[data-theme="scifi"] {
   --color-bg-outside: #d6d2d2;
   --color-paper: #f1e4f3;
@@ -73,6 +74,7 @@ body[data-theme="research"] {
   --font-title: 'Outfit', sans-serif;
   --sigil-glow: rgba(135, 152, 106, 0.35);
 }
+*/
 
 body[data-theme="studio"] {
   --color-bg-outside: #0b0914;
@@ -198,7 +200,7 @@ body[data-theme="studio"] .topbar {
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-body[data-theme="arcane"] .control-btn, body[data-theme="research"] .control-btn, body[data-theme="scifi"] .control-btn {
+body[data-theme="arcane"] .control-btn {
   background-color: rgba(0, 0, 0, 0.03);
   border: 1px solid rgba(0, 0, 0, 0.06);
 }
@@ -210,7 +212,7 @@ body[data-theme="arcane"] .control-btn, body[data-theme="research"] .control-btn
   transform: translateY(-2px);
 }
 
-body[data-theme="arcane"] .control-btn:hover, body[data-theme="research"] .control-btn:hover, body[data-theme="scifi"] .control-btn:hover {
+body[data-theme="arcane"] .control-btn:hover {
   background-color: rgba(0, 0, 0, 0.05);
 }
 
@@ -228,7 +230,7 @@ select.control-btn {
   background-size: 14px;
 }
 
-body[data-theme="arcane"] select.control-btn, body[data-theme="research"] select.control-btn, body[data-theme="scifi"] select.control-btn {
+body[data-theme="arcane"] select.control-btn {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='rgba(0,0,0,0.6)'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2.5' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
 }
 
@@ -294,7 +296,7 @@ body[data-theme="arcane"] select.control-btn, body[data-theme="research"] select
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-body[data-theme="arcane"] .tool-item, body[data-theme="research"] .tool-item, body[data-theme="scifi"] .tool-item {
+body[data-theme="arcane"] .tool-item {
   background-color: rgba(0, 0, 0, 0.02);
   border-color: rgba(0, 0, 0, 0.06);
 }
@@ -307,7 +309,7 @@ body[data-theme="arcane"] .tool-item, body[data-theme="research"] .tool-item, bo
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
-body[data-theme="arcane"] .tool-item:hover, body[data-theme="research"] .tool-item:hover, body[data-theme="scifi"] .tool-item:hover {
+body[data-theme="arcane"] .tool-item:hover {
   background-color: rgba(0, 0, 0, 0.04);
 }
 
@@ -475,9 +477,7 @@ body[data-theme="arcane"] .tool-item:hover, body[data-theme="research"] .tool-it
   margin-right: 8px;
 }
 
-body[data-theme="arcane"] .loading-spinner,
-body[data-theme="research"] .loading-spinner,
-body[data-theme="scifi"] .loading-spinner {
+body[data-theme="arcane"] .loading-spinner {
   border: 2px solid rgba(0, 0, 0, 0.15);
   border-top-color: var(--color-accent);
 }
@@ -532,7 +532,7 @@ body[data-theme="scifi"] .loading-spinner {
   transform: translateX(-4px);
 }
 
-body[data-theme="arcane"] .orb-action-btn:hover, body[data-theme="research"] .orb-action-btn:hover, body[data-theme="scifi"] .orb-action-btn:hover {
+body[data-theme="arcane"] .orb-action-btn:hover {
   background: rgba(0, 0, 0, 0.05);
 }
 

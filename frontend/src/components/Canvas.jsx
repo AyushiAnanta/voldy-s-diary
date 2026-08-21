@@ -12,18 +12,6 @@ const THEME_COLORS = {
     grid: "rgba(214, 204, 194, 0.45)",
     accent: "#bfa08f"
   },
-  scifi: {
-    paper: "#f1e4f3",
-    ink: "#47192d",
-    grid: "rgba(244, 187, 211, 0.4)",
-    accent: "#fe5d9f"
-  },
-  research: {
-    paper: "#e9f5db",
-    ink: "#242c19",
-    grid: "rgba(151, 169, 124, 0.35)",
-    accent: "#718355"
-  },
   studio: {
     paper: "#110d1f",
     ink: "#dec0f1",

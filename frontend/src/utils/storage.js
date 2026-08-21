@@ -117,6 +117,32 @@ export async function saveSessionState(sessionData) {
 /**
  * Load session state from IndexedDB
  */
+/**
+ * Normalizes reasoning effort input string against prototype pollution & non-string types.
+ */
+export function normalizeReasoningLevel(input) {
+  if (typeof input !== "string") return "normal";
+  const REASONING_MAP = {
+    none: "normal",
+    low: "normal",
+    medium: "normal",
+    high: "deep",
+    max: "deep",
+    normal: "normal",
+    deep: "deep"
+  };
+  return Object.hasOwn(REASONING_MAP, input) ? REASONING_MAP[input] : "normal";
+}
+
+/**
+ * Normalizes theme input string against legacy values and non-string types.
+ */
+export function normalizeTheme(input) {
+  if (typeof input !== "string") return "arcane";
+  const VALID_THEMES = ["arcane", "studio"];
+  return VALID_THEMES.includes(input) ? input : "arcane";
+}
+
 export async function loadSessionState() {
   try {
     const db = await openDB();
@@ -132,9 +158,13 @@ export async function loadSessionState() {
           return;
         }
 
-        // Schema Migration check (if upgrading from older schema versions)
+        // Schema Migration check & setting normalization
         if (result.version !== DB_VERSION) {
           result.version = DB_VERSION;
+        }
+        if (result.settings) {
+          result.settings.theme = normalizeTheme(result.settings.theme);
+          result.settings.reasoning = normalizeReasoningLevel(result.settings.reasoning);
         }
         resolve(result);
       };
