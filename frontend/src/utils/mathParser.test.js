@@ -92,7 +92,7 @@ describe("Safe Math Parser Security & Functionality Test Suite", () => {
   });
 });
 
-import { normalizeReasoningLevel, normalizeTheme } from "./storage.js";
+import { normalizeReasoningLevel, normalizeTheme, normalizeViewport } from "./storage.js";
 
 describe("State Normalization & Backward Compatibility Test Suite", () => {
   test("Normalizes legacy reasoning levels: 'none', 'low', 'medium' -> 'normal'", () => {
@@ -126,5 +126,17 @@ describe("State Normalization & Backward Compatibility Test Suite", () => {
   test("Preserves valid themes: 'arcane', 'studio'", () => {
     assert.strictEqual(normalizeTheme("arcane"), "arcane");
     assert.strictEqual(normalizeTheme("studio"), "studio");
+  });
+
+  test("Normalizes viewport against NaN, Infinity, and out-of-bounds pan/zoom", () => {
+    const res1 = normalizeViewport({ panX: NaN, panY: Infinity, zoom: null });
+    assert.strictEqual(res1.panX, 0);
+    assert.strictEqual(res1.panY, 0);
+    assert.strictEqual(res1.zoom, 1.0);
+
+    const res2 = normalizeViewport({ panX: -50000, panY: 99999, zoom: 10 });
+    assert.strictEqual(res2.panX, -12000);
+    assert.strictEqual(res2.panY, 12000);
+    assert.strictEqual(res2.zoom, 3.5);
   });
 });

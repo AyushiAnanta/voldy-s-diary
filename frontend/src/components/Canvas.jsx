@@ -83,16 +83,34 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
     /**
      * Loads persisted state into canvas memory
      */
+    /**
+     * Resets canvas pan and zoom to initial centered viewport position (0, 0, 1.0)
+     */
+    recenterViewport: () => {
+      stateRef.current.panX = 0;
+      stateRef.current.panY = 0;
+      stateRef.current.zoom = 1.0;
+      drawCanvas();
+      if (onViewportChangeRef.current) {
+        onViewportChangeRef.current({ panX: 0, panY: 0, zoom: 1.0 });
+      }
+    },
+
     loadCanvasState: (savedStrokes, savedViewport) => {
       if (Array.isArray(savedStrokes)) {
         stateRef.current.strokes = savedStrokes;
       }
       if (savedViewport) {
-        stateRef.current.panX = savedViewport.panX || 0;
-        stateRef.current.panY = savedViewport.panY || 0;
-        stateRef.current.zoom = savedViewport.zoom || 1.0;
+        const MAX_PAN = 12000;
+        const panX = typeof savedViewport.panX === "number" && Number.isFinite(savedViewport.panX) ? savedViewport.panX : 0;
+        const panY = typeof savedViewport.panY === "number" && Number.isFinite(savedViewport.panY) ? savedViewport.panY : 0;
+        const zoom = typeof savedViewport.zoom === "number" && Number.isFinite(savedViewport.zoom) ? savedViewport.zoom : 1.0;
+
+        stateRef.current.panX = Math.min(Math.max(panX, -MAX_PAN), MAX_PAN);
+        stateRef.current.panY = Math.min(Math.max(panY, -MAX_PAN), MAX_PAN);
+        stateRef.current.zoom = Math.min(Math.max(zoom, 0.15), 3.5);
         if (onViewportChangeRef.current) {
-          onViewportChangeRef.current(savedViewport);
+          onViewportChangeRef.current({ panX: stateRef.current.panX, panY: stateRef.current.panY, zoom: stateRef.current.zoom });
         }
       }
       drawCanvas();
@@ -285,11 +303,16 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
 
     // 2. Draw dynamic grid dots only in the visible viewport area
     if (state.zoom >= 0.22) {
-      // Calculate visible bounds in logical coordinates
-      const visLeft  = -(canvas.width / 2 + state.panX) / state.zoom + 10000;
-      const visTop   = -(canvas.height / 2 + state.panY) / state.zoom + 10000;
-      const visRight = (canvas.width / 2 - state.panX) / state.zoom + 10000;
-      const visBottom = (canvas.height / 2 - state.panY) / state.zoom + 10000;
+      // Calculate visible bounds in logical coordinates clamped to logical 20000x20000 space
+      const rawVisLeft  = -(canvas.width / 2 + state.panX) / state.zoom + 10000;
+      const rawVisTop   = -(canvas.height / 2 + state.panY) / state.zoom + 10000;
+      const rawVisRight = (canvas.width / 2 - state.panX) / state.zoom + 10000;
+      const rawVisBottom = (canvas.height / 2 - state.panY) / state.zoom + 10000;
+
+      const visLeft  = Math.max(0, Math.min(20000, rawVisLeft));
+      const visTop   = Math.max(0, Math.min(20000, rawVisTop));
+      const visRight = Math.max(0, Math.min(20000, rawVisRight));
+      const visBottom = Math.max(0, Math.min(20000, rawVisBottom));
 
       // Increase spacing when zoomed out to prevent congestion
       const spacing = state.zoom < 0.65 ? 90 : 30;
@@ -548,8 +571,9 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
       } else if (state.isPanning) {
         const dx = e.clientX - state.lastPointerPos.x;
         const dy = e.clientY - state.lastPointerPos.y;
-        state.panX += dx;
-        state.panY += dy;
+        const MAX_PAN = 12000;
+        state.panX = Math.min(Math.max(state.panX + dx, -MAX_PAN), MAX_PAN);
+        state.panY = Math.min(Math.max(state.panY + dy, -MAX_PAN), MAX_PAN);
         state.lastPointerPos = { x: e.clientX, y: e.clientY };
         drawCanvas();
         if (onViewportChangeRef.current) {
@@ -624,9 +648,12 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
       const newZoom = Math.min(Math.max(e.deltaY < 0 ? oldZoom * zoomFactor : oldZoom / zoomFactor, 0.15), 3.5);
       const zoomRatio = newZoom / oldZoom;
 
-      // Mathematically precise cursor-centered zoom
-      state.panX = mx - (mx - state.panX) * zoomRatio;
-      state.panY = my - (my - state.panY) * zoomRatio;
+      // Mathematically precise cursor-centered zoom with pan bounds clamping
+      const nextPanX = mx - (mx - state.panX) * zoomRatio;
+      const nextPanY = my - (my - state.panY) * zoomRatio;
+      const MAX_PAN = 12000;
+      state.panX = Math.min(Math.max(nextPanX, -MAX_PAN), MAX_PAN);
+      state.panY = Math.min(Math.max(nextPanY, -MAX_PAN), MAX_PAN);
       state.zoom = newZoom;
 
       drawCanvas();

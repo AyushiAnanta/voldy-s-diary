@@ -143,6 +143,25 @@ export function normalizeTheme(input) {
   return VALID_THEMES.includes(input) ? input : "arcane";
 }
 
+/**
+ * Normalizes viewport translation & zoom against NaN, Infinity, and extreme out-of-bounds.
+ */
+export function normalizeViewport(viewport) {
+  const MAX_PAN = 12000;
+  if (!viewport || typeof viewport !== "object") {
+    return { panX: 0, panY: 0, zoom: 1.0 };
+  }
+  const panX = typeof viewport.panX === "number" && Number.isFinite(viewport.panX) ? viewport.panX : 0;
+  const panY = typeof viewport.panY === "number" && Number.isFinite(viewport.panY) ? viewport.panY : 0;
+  const zoom = typeof viewport.zoom === "number" && Number.isFinite(viewport.zoom) ? viewport.zoom : 1.0;
+
+  return {
+    panX: Math.min(Math.max(panX, -MAX_PAN), MAX_PAN),
+    panY: Math.min(Math.max(panY, -MAX_PAN), MAX_PAN),
+    zoom: Math.min(Math.max(zoom, 0.15), 3.5)
+  };
+}
+
 export async function loadSessionState() {
   try {
     const db = await openDB();
@@ -158,7 +177,7 @@ export async function loadSessionState() {
           return;
         }
 
-        // Schema Migration check & setting normalization
+        // Schema Migration check & setting / viewport normalization
         if (result.version !== DB_VERSION) {
           result.version = DB_VERSION;
         }
@@ -166,6 +185,7 @@ export async function loadSessionState() {
           result.settings.theme = normalizeTheme(result.settings.theme);
           result.settings.reasoning = normalizeReasoningLevel(result.settings.reasoning);
         }
+        result.viewport = normalizeViewport(result.viewport);
         resolve(result);
       };
       req.onerror = (event) => reject(event.target.error);
