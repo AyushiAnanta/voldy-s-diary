@@ -267,19 +267,7 @@ body[data-theme="arcane"] select.control-btn {
 }
 
 /* ==========================================================================
-   5. FLOATING TOOL DOCK
-   ========================================================================== */
-.tool-dock {
-  position: absolute;
-  left: 24px;
-  bottom: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px;
-  z-index: 100;
-  border-radius: 18px;
-}
+
 
 .tool-item {
   width: 48px;

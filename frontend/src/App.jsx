@@ -1,20 +1,26 @@
 import React, { useState, useEffect, useRef } from "react";
 import { 
   Sparkles, 
-  PenTool, 
-  Eraser, 
-  MousePointer, 
-  RotateCcw, 
   CircleAlert,
+  RotateCcw,
+  BotOff,
   HelpCircle,
   FastForward,
   BookOpen,
   CheckCircle2,
   LineChart,
   CheckCheck,
-  Type
+  Type,
+  Sun,
+  Moon,
+  Zap,
+  Brain
 } from "lucide-react";
 import Canvas from "./components/Canvas.jsx";
+import Toolbar from "./components/Toolbar.jsx";
+import PropertyPanel from "./components/PropertyPanel.jsx";
+import ZoomControl from "./components/ZoomControl.jsx";
+import CustomSelect from "./components/CustomSelect.jsx";
 import VoldemortSigil from "./components/VoldemortSigil.jsx";
 import { 
   saveSessionState, 
@@ -27,11 +33,21 @@ import {
 
 const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
+const THEME_OPTIONS = [
+  { value: "arcane", label: "Arcane Parchment", icon: <Sun size={15} style={{ color: "#d97706" }} />, description: "Warm parchment paper theme" },
+  { value: "studio", label: "Studio Void", icon: <Moon size={15} style={{ color: "#957fef" }} />, description: "Sleek dark void theme" }
+];
+
+const REASONING_OPTIONS = [
+  { value: "normal", label: "Fast Thinking", icon: <Zap size={15} style={{ color: "#eab308" }} />, description: "Quick & responsive math solving" },
+  { value: "deep", label: "Deep Thinking", icon: <Brain size={15} style={{ color: "#7161ef" }} />, description: "Heightened multi-step reasoning" }
+];
+
 export default function App() {
   const canvasRef = useRef(null);
   const autoTriggerTimer = useRef(null);
   const autoSaveTimerRef = useRef(null);
-  const statusRef = useRef("ready"); // mirror of status state for use inside timers
+  const statusRef = useRef("ready");
   const isLoadedRef = useRef(false);
   
   // React State variables
@@ -42,10 +58,23 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [isOrbMenuOpen, setIsOrbMenuOpen] = useState(false);
+  const [isAiEnabled, setIsAiEnabled] = useState(true);
+
+  const isAiEnabledRef = useRef(isAiEnabled);
+
+  // Excalidraw-parity Toolset State
+  const [isLocked, setIsLocked] = useState(false);
+  const [selectedElements, setSelectedElements] = useState([]);
+  const [currentStyle, setCurrentStyle] = useState({
+    strokeColor: "#2e231d",
+    backgroundColor: "transparent",
+    strokeWidth: 3,
+    strokeStyle: "solid",
+    opacity: 100
+  });
 
   const errorTimeoutRef = useRef(null);
 
-  // Custom function to show graceful on-screen toast messages instead of browser alerts
   const showError = (msg) => {
     setErrorMessage(msg);
     if (errorTimeoutRef.current) {
@@ -64,18 +93,20 @@ export default function App() {
     };
   }, []);
 
-  // Keep statusRef in sync with status state
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+
+  useEffect(() => {
+    isAiEnabledRef.current = isAiEnabled;
+    if (!isAiEnabled && autoTriggerTimer.current) {
+      clearTimeout(autoTriggerTimer.current);
+    }
+  }, [isAiEnabled]);
   
-  // Track high-frequency pan & zoom state to transform overlay layer dynamically
   const [viewport, setViewport] = useState({ panX: 0, panY: 0, zoom: 1.0 });
-  
-  // List of active AI drafts overlay objects
   const [drafts, setDrafts] = useState([]);
 
-  // Load saved session on component mount
   useEffect(() => {
     async function restoreSession() {
       const saved = await loadSessionState();
@@ -84,6 +115,7 @@ export default function App() {
           if (saved.settings.theme) setTheme(normalizeTheme(saved.settings.theme));
           if (saved.settings.activeTool) setActiveTool(saved.settings.activeTool);
           if (saved.settings.reasoning) setReasoning(normalizeReasoningLevel(saved.settings.reasoning));
+          if (typeof saved.settings.isAiEnabled === "boolean") setIsAiEnabled(saved.settings.isAiEnabled);
         }
         if (saved.viewport) setViewport(saved.viewport);
         if (saved.drafts) setDrafts(saved.drafts);
@@ -97,13 +129,13 @@ export default function App() {
     restoreSession();
   }, []);
 
-  // Subscribe to cross-tab synchronization with active-drawing lock check
   useEffect(() => {
     const unsubscribe = subscribeToCrossTabSync(
       (remoteState) => {
         if (!remoteState) return;
         if (remoteState.settings?.theme) setTheme(normalizeTheme(remoteState.settings.theme));
         if (remoteState.settings?.reasoning) setReasoning(normalizeReasoningLevel(remoteState.settings.reasoning));
+        if (typeof remoteState.settings?.isAiEnabled === "boolean") setIsAiEnabled(remoteState.settings.isAiEnabled);
         if (remoteState.viewport) setViewport(remoteState.viewport);
         if (remoteState.drafts) setDrafts(remoteState.drafts);
         if (canvasRef.current) {
@@ -115,7 +147,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Trigger debounced auto-save whenever canvas strokes, drafts, viewport, or settings change
   const triggerAutoSave = () => {
     if (!isLoadedRef.current || !canvasRef.current) return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -126,7 +157,7 @@ export default function App() {
         strokes: canvasData.strokes,
         viewport: canvasData.viewport,
         drafts: drafts,
-        settings: { theme, activeTool, reasoning }
+        settings: { theme, activeTool, reasoning, isAiEnabled }
       });
 
       if (res && res.prunedStrokes) {
@@ -135,48 +166,43 @@ export default function App() {
     }, 600);
   };
 
-  // Trigger save on state updates
   useEffect(() => {
     triggerAutoSave();
-  }, [theme, activeTool, reasoning, drafts, viewport]);
+  }, [theme, activeTool, reasoning, isAiEnabled, drafts, viewport]);
 
-  // Apply visual theme to the document body element
   useEffect(() => {
     document.body.setAttribute("data-theme", theme);
   }, [theme]);
 
-  // Redraw LaTeX equations when draft list updates
   useEffect(() => {
     if (window.MathJax && window.MathJax.typesetPromise) {
       window.MathJax.typesetPromise();
     }
   }, [drafts]);
 
-  // Hook up viewport callback triggers from the child drawing board
   const handleViewportChange = (vp) => {
     setViewport(vp);
   };
 
-  // Auto-trigger AI after 2.5s of drawing inactivity
   const handleDrawFinished = () => {
-    triggerAutoSave(); // Auto-save after stroke release
+    triggerAutoSave();
     
-    // Clear any existing pending timer
     if (autoTriggerTimer.current) {
       clearTimeout(autoTriggerTimer.current);
     }
-    // Set a new timer — if user doesn't draw again within 2.5s, trigger AI
-    autoTriggerTimer.current = setTimeout(() => {
-      if (statusRef.current === "ready" && canvasRef.current) {
-        handleTriggerAI();
-      }
-    }, 3500);
+    // Only schedule auto AI response if AI is enabled
+    if (isAiEnabledRef.current) {
+      autoTriggerTimer.current = setTimeout(() => {
+        if (statusRef.current === "ready" && isAiEnabledRef.current && canvasRef.current) {
+          handleTriggerAI();
+        }
+      }, 2500);
+    }
   };
 
-  // Triggers API pipeline request to the backend server with optional prompt modes
   const handleTriggerAI = async (mode = "auto") => {
     if (status !== "ready") return;
-    setIsOrbMenuOpen(false); // Close menu if open
+    setIsOrbMenuOpen(false);
 
     const cropData = canvasRef.current.captureCrop();
     if (!cropData || !cropData.image) {
@@ -186,7 +212,6 @@ export default function App() {
 
     setStatus("observing");
 
-    // Formulate custom prompt text based on user's selected mode
     let customPromptText = "Analyze the handwriting/drawings in the visual crop and provide responses/continuations.";
     if (mode === "hint") {
       customPromptText = "Provide a subtle, encouraging hint for the next step of the equation/drawing. Do not reveal the full answer.";
@@ -205,7 +230,6 @@ export default function App() {
     }
 
     try {
-      // 2. Fetch structured drawing/text commands from Express server (passing reasoning level)
       const response = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/canvas-ai`, { 
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -217,8 +241,8 @@ export default function App() {
           cropHeight: cropData.cropHeight,
           text: customPromptText,
           mode: mode,
-          reasoning: reasoning, // Threaded reasoning effort parameter to backend
-          intent: (mode === "typeset" || activeTool === "lasso" || cropData.selectionContext) ? "typeset" : (mode === "plot" ? "plot" : "auto")
+          reasoning: reasoning,
+          intent: (mode === "typeset" || activeTool === "select" || cropData.selectionContext) ? "typeset" : (mode === "plot" ? "plot" : "auto")
         })
       });
 
@@ -229,7 +253,6 @@ export default function App() {
         throw new Error(data.detail || data.error);
       }
 
-      // 3. Convert returned commands (write_text, draw, draw_formula) to overlay draft cards
       if (data.commands && data.commands.length > 0) {
         const newDrafts = data.commands.map((cmd, index) => {
           let content = "";
@@ -237,40 +260,24 @@ export default function App() {
           if (cmd.tool === "write_text") {
             content = cmd.text;
           } else if (cmd.tool === "draw_formula") {
-            // Render Math equations wrapped in LaTeX delimiters
-            content = `$$${cmd.latex}$$`;
+            content = `$$\n${cmd.formula}\n$$`;
+          } else if (cmd.tool === "draw") {
+            content = `🎨 Vector Shape: ${cmd.types ? cmd.types.join(", ") : "Diagram"}`;
           } else if (cmd.tool === "plot_function") {
-            content = `Plotting Function: ${cmd.expression}`;
+            content = `📈 Plot: y = ${cmd.expression || "f(x)"}`;
           } else {
-            content = `AI Stroke/Draw Path [${cmd.tool}]`;
+            content = "AI Generated Content";
           }
 
-          let x = cmd.x;
-          let y = cmd.y;
-
-          // Fallback: If coordinates are out of bounds or missing, 
-          // position the draft card directly to the right of the drawing crop
-          const isInvalidX = (!x || x < 100 || x > 19900);
-          const isInvalidY = (!y || y < 100 || y > 19900);
-
-          if (isInvalidX || isInvalidY) {
-            x = cropData.cropX + cropData.cropWidth + 30;
-            y = cropData.cropY + (index * 40);
-
-            // Double fallback: if crop coordinates are missing, center in viewport
-            if (isNaN(x) || x < 100 || x > 19900) {
-              x = 10000 - viewport.panX / viewport.zoom + (index * 40);
-              y = 10000 - viewport.panY / viewport.zoom + (index * 40);
-            }
-          }
+          const [x, y] = cmd.position || [cropData.cropX + cropData.cropWidth + 40, cropData.cropY + index * 120];
 
           return {
-            id: `draft-${Date.now()}-${index}`,
+            id: `draft_${Date.now()}_${index}`,
             x,
             y,
             width: cmd.maxWidth || 260,
             text: content,
-            rawCommand: cmd // keep command references for canvas writing later
+            rawCommand: cmd
           };
         });
 
@@ -296,6 +303,7 @@ export default function App() {
     setConfirmClear(false);
     canvasRef.current.clearCanvas();
     setDrafts([]);
+    setSelectedElements([]);
     await clearSessionState();
   };
 
@@ -303,17 +311,14 @@ export default function App() {
     const draft = drafts.find(d => d.id === id);
     if (draft && draft.rawCommand) {
       if (draft.rawCommand.tool === "draw") {
-        // Bake the vector shape into permanent canvas strokes
         canvasRef.current.bakeDrawCommand(draft.rawCommand);
         setDrafts(prev => prev.filter(d => d.id !== id));
         triggerAutoSave();
       } else if (draft.rawCommand.tool === "plot_function") {
-        // Bake the function plot curve & axes into permanent canvas strokes
         canvasRef.current.bakePlotCommand(draft.rawCommand);
         setDrafts(prev => prev.filter(d => d.id !== id));
         triggerAutoSave();
       } else {
-        // Keep draft on screen permanently by marking it accepted
         setDrafts(prev => prev.map(d => d.id === id ? { ...d, accepted: true } : d));
         triggerAutoSave();
       }
@@ -324,9 +329,22 @@ export default function App() {
     setDrafts(prev => prev.filter(d => d.id !== id));
   };
 
+  const handleStyleChange = (styleDiff) => {
+    setCurrentStyle(prev => ({ ...prev, ...styleDiff }));
+    if (canvasRef.current) {
+      canvasRef.current.updateSelectedStyle(styleDiff);
+    }
+  };
+
+  const handleToolbarAction = (action) => {
+    if (canvasRef.current) {
+      canvasRef.current.handleOverflowAction(action);
+    }
+  };
+
   return (
     <div className="app-container" style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
-      {/* 1. Glassmorphic Top Controls Bar */}
+      {/* 1. Integrated Glassmorphic Header */}
       <header className="topbar chrome-container">
         <div className="brand-section">
           <div className="brand-sigil-portrait" style={{ display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }} title="Voldemort Sigil">
@@ -337,36 +355,124 @@ export default function App() {
           </div>
         </div>
 
+        {/* Integrated Top Center Whiteboard Toolbar */}
+        <Toolbar
+          activeTool={activeTool}
+          setActiveTool={setActiveTool}
+          isLocked={isLocked}
+          setIsLocked={setIsLocked}
+          onAction={handleToolbarAction}
+        />
+
         <div className="toolbar-controls">
+          {/* Custom Interactive AI Switch Pill */}
+          <button
+            type="button"
+            onClick={() => setIsAiEnabled(prev => !prev)}
+            title={isAiEnabled ? "AI Active: Click to pause automatic AI responses" : "AI Paused: Click to enable automatic AI responses"}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "4px 12px 4px 6px",
+              borderRadius: "20px",
+              cursor: "pointer",
+              background: isAiEnabled ? "rgba(113, 97, 239, 0.15)" : "rgba(255, 255, 255, 0.05)",
+              border: `1px solid ${isAiEnabled ? "rgba(113, 97, 239, 0.45)" : "rgba(0, 0, 0, 0.15)"}`,
+              transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)"
+            }}
+          >
+            <div style={{
+              width: "34px",
+              height: "18px",
+              borderRadius: "10px",
+              background: isAiEnabled ? "var(--color-accent)" : "rgba(150, 150, 150, 0.3)",
+              position: "relative",
+              transition: "background 0.25s ease"
+            }}>
+              <div style={{
+                width: "14px",
+                height: "14px",
+                borderRadius: "50%",
+                background: "#ffffff",
+                position: "absolute",
+                top: "2px",
+                left: isAiEnabled ? "18px" : "2px",
+                transition: "left 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+                boxShadow: "0 2px 4px rgba(0,0,0,0.25)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}>
+                {isAiEnabled ? <Sparkles size={8} style={{ color: "var(--color-accent)" }} /> : <BotOff size={8} style={{ color: "#888" }} />}
+              </div>
+            </div>
+            <span style={{ fontSize: "12px", fontWeight: "600", color: isAiEnabled ? "var(--color-accent)" : "inherit", opacity: isAiEnabled ? 1 : 0.6 }}>
+              {isAiEnabled ? "Auto AI: ON" : "Auto AI: OFF"}
+            </span>
+          </button>
+
+          {/* Explicit Clear Screen Button */}
+          <button
+            className="control-btn"
+            onClick={handleClear}
+            title="Clear Board & Saved Session"
+            style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}
+          >
+            <RotateCcw size={14} style={{ color: "#f87171" }} />
+            <span>Clear</span>
+          </button>
+
           {/* AI Status Indicator */}
-          <div className="control-btn" style={{ cursor: "default" }}>
-            {status === "ready" && <><Sparkles size={14} style={{ color: "var(--color-accent)" }} /> Ready</>}
-            {status === "observing" && <><span className="loading-spinner"></span> Observing...</>}
-            {status === "writing" && <><span className="loading-spinner"></span> Writing...</>}
-          </div>
+          {isAiEnabled && (
+            <div className="control-btn" style={{ cursor: "default" }}>
+              {status === "ready" && <><Sparkles size={14} style={{ color: "var(--color-accent)" }} /> Ready</>}
+              {status === "observing" && <><span className="loading-spinner"></span> Observing...</>}
+              {status === "writing" && <><span className="loading-spinner"></span> Writing...</>}
+            </div>
+          )}
 
-          {/* Reasoning Settings (Threaded to Gemini SDK Parameters) */}
-          <select 
-            className="control-btn" 
-            value={reasoning} 
-            onChange={(e) => setReasoning(e.target.value)}
-            title="Reasoning Effort: Adjusts Gemini depth & token budget"
-          >
-            <option value="normal">⚡ Normal (Fast)</option>
-            <option value="deep">🧠 Deep (Heightened)</option>
-          </select>
+          {/* Custom Glassmorphic Reasoning Select */}
+          <CustomSelect
+            value={reasoning}
+            onChange={setReasoning}
+            options={REASONING_OPTIONS}
+            title="Reasoning Effort: Adjusts Gemini thinking depth & token budget"
+          />
 
-          {/* Theme Selector */}
-          <select 
-            className="control-btn" 
-            value={theme} 
-            onChange={(e) => setTheme(e.target.value)}
-          >
-            <option value="arcane">Arcane (Parchment)</option>
-            <option value="studio">Studio (Dark Void)</option>
-          </select>
+          {/* Custom Glassmorphic Theme Select */}
+          <CustomSelect
+            value={theme}
+            onChange={setTheme}
+            options={THEME_OPTIONS}
+            title="Visual Theme: Arcane Parchment vs Studio Void"
+          />
         </div>
       </header>
+
+      {/* 2. Left Property Panel */}
+      <PropertyPanel
+        activeTool={activeTool}
+        selectedElements={selectedElements}
+        currentStyle={currentStyle}
+        onStyleChange={handleStyleChange}
+      />
+
+      {/* 3. Bottom Left Zoom Control */}
+      <ZoomControl
+        zoom={viewport.zoom}
+        onZoomChange={(newZoom) => {
+          setViewport(prev => ({ ...prev, zoom: newZoom }));
+          if (canvasRef.current) {
+            canvasRef.current.loadCanvasState(undefined, { ...viewport, zoom: newZoom });
+          }
+        }}
+        onReset={() => {
+          if (canvasRef.current) {
+            canvasRef.current.recenterViewport();
+          }
+        }}
+      />
 
       {/* Graceful Toast notification banner */}
       {errorMessage && (
@@ -411,7 +517,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Confirmation toast for clearing canvas — replaces window.confirm() */}
+      {/* Confirmation toast for clearing canvas */}
       {confirmClear && (
         <div className="toast-notification chrome-container" style={{
           position: "fixed",
@@ -472,7 +578,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 2. Interactive Canvas Component */}
+      {/* 4. Interactive Canvas Component */}
       <Canvas 
         ref={canvasRef}
         activeTool={activeTool} 
@@ -480,9 +586,13 @@ export default function App() {
         onViewportChange={handleViewportChange}
         onDrawFinished={handleDrawFinished}
         drafts={drafts}
+        isLocked={isLocked}
+        currentStyle={currentStyle}
+        onSelectionChange={(selected) => setSelectedElements(selected)}
+        onToolAutoRevert={() => setActiveTool("select")}
       />
 
-      {/* 3. GPU-Accelerated Absolute Positioning Draft Layer */}
+      {/* 5. GPU-Accelerated Absolute Positioning Draft Layer */}
       <div 
         className="drafts-overlay-layer"
         style={{
@@ -548,44 +658,8 @@ export default function App() {
         ))}
       </div>
 
-      {/* 4. Left Sidebar Tool Dock */}
-      <div className="tool-dock chrome-container">
-        <button 
-          className={`tool-item ${activeTool === "pen" ? "active" : ""}`} 
-          onClick={() => setActiveTool("pen")}
-          title="Drawing Pen"
-        >
-          <PenTool size={18} />
-        </button>
-        <button 
-          className={`tool-item ${activeTool === "eraser" ? "active" : ""}`} 
-          onClick={() => setActiveTool("eraser")}
-          title="Eraser brush"
-        >
-          <Eraser size={18} />
-        </button>
-        <button 
-          className={`tool-item ${activeTool === "lasso" ? "active" : ""}`} 
-          onClick={() => setActiveTool("lasso")}
-          title="Lasso Selection"
-        >
-          <MousePointer size={18} />
-        </button>
-        
-        <hr style={{ border: "none", borderTop: "1px solid var(--color-chrome-border)", margin: "4px 0" }} />
-        
-        <button 
-          className="tool-item" 
-          onClick={handleClear}
-          title="Clear Board & Saved Session"
-        >
-          <RotateCcw size={18} />
-        </button>
-      </div>
-
-      {/* 5. Glowing Magic AI Orb with Interactive Action Menu */}
+      {/* 6. Glowing Magic AI Orb with Interactive Action Menu */}
       <div className="ai-orb-container">
-        {/* Interactive Radial Popover Action Menu */}
         {isOrbMenuOpen && (
           <div className="ai-orb-menu chrome-container">
             <button 

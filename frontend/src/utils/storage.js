@@ -162,6 +162,34 @@ export function normalizeViewport(viewport) {
   };
 }
 
+/**
+ * Normalizes element/stroke records loaded from storage to ensure backward-compatibility
+ * with legacy freehand pen stroke schemas.
+ */
+export function normalizeElement(item) {
+  if (!item || typeof item !== "object") return null;
+
+  const elementType = item.elementType || item.tool || "pen";
+  const strokeColor = item.strokeColor !== undefined ? item.strokeColor : (item.color || null);
+  const backgroundColor = item.backgroundColor || "transparent";
+  const strokeWidth = item.strokeWidth || item.width || (elementType === "eraser" ? 24 : 3);
+  const strokeStyle = item.strokeStyle || "solid";
+  const opacity = typeof item.opacity === "number" && Number.isFinite(item.opacity) ? item.opacity : 100;
+  const points = Array.isArray(item.points) ? item.points : [];
+
+  return {
+    ...item,
+    id: item.id || `el_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+    elementType,
+    strokeColor,
+    backgroundColor,
+    strokeWidth,
+    strokeStyle,
+    opacity,
+    points
+  };
+}
+
 export async function loadSessionState() {
   try {
     const db = await openDB();
@@ -177,7 +205,7 @@ export async function loadSessionState() {
           return;
         }
 
-        // Schema Migration check & setting / viewport normalization
+        // Schema Migration check & setting / viewport / element normalization
         if (result.version !== DB_VERSION) {
           result.version = DB_VERSION;
         }
@@ -186,6 +214,9 @@ export async function loadSessionState() {
           result.settings.reasoning = normalizeReasoningLevel(result.settings.reasoning);
         }
         result.viewport = normalizeViewport(result.viewport);
+        if (Array.isArray(result.strokes)) {
+          result.strokes = result.strokes.map(normalizeElement).filter(Boolean);
+        }
         resolve(result);
       };
       req.onerror = (event) => reject(event.target.error);
