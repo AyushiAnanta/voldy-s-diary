@@ -208,8 +208,8 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
         }
         
         oCtx.lineWidth = stroke.tool === "eraser" ? 24 : 3;
-        // Erase strokes draw with paper color on the crop
-        oCtx.strokeStyle = stroke.tool === "eraser" ? paperColor : (stroke.color || activeColors.ink);
+        // Erase strokes draw with paper color on the crop, pen strokes use active theme ink
+        oCtx.strokeStyle = stroke.tool === "eraser" ? paperColor : (stroke.isCustomColor ? stroke.color : activeColors.ink);
         oCtx.stroke();
       });
 
@@ -484,8 +484,8 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
       }
 
       ctx.lineWidth = stroke.tool === "eraser" ? 24 : (stroke.width || 3);
-      // Retain stroke's original drawn ink color across theme switches
-      ctx.strokeStyle = stroke.tool === "eraser" ? paperColor : (stroke.color || inkColor);
+      // Dynamically adapt drawn ink strokes to active theme ink color
+      ctx.strokeStyle = stroke.tool === "eraser" ? paperColor : (stroke.isCustomColor ? stroke.color : inkColor);
       ctx.stroke();
     });
   };
@@ -581,12 +581,11 @@ const Canvas = forwardRef(({ activeTool, theme, onDrawFinished, onViewportChange
             state.lassoBounds = { minX: lMinX, minY: lMinY, maxX: lMaxX, maxY: lMaxY };
             state.hasLasso = true;
           } else {
-            // Commit smoothed stroke to memory list with timestamp & exact ink color retention
+            // Commit smoothed stroke to memory list with timestamp; pen strokes adapt dynamically to active theme ink
             const smoothedPoints = simplifyStrokePoints(state.currentStroke);
             state.strokes.push({
               points: smoothedPoints,
               tool: activeTool,
-              color: activeTool === "eraser" ? null : activeColors.ink,
               timestamp: Date.now()
             });
           }
