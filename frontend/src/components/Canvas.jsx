@@ -19,6 +19,7 @@ const THEME_COLORS = {
 const Canvas = forwardRef(({
   activeTool,
   theme,
+  onDrawStart,
   onDrawFinished,
   onViewportChange,
   drafts,
@@ -53,10 +54,12 @@ const Canvas = forwardRef(({
   });
 
   const onViewportChangeRef = useRef(onViewportChange);
+  const onDrawStartRef = useRef(onDrawStart);
   const onDrawFinishedRef = useRef(onDrawFinished);
   const onSelectionChangeRef = useRef(onSelectionChange);
 
   useEffect(() => { onViewportChangeRef.current = onViewportChange; }, [onViewportChange]);
+  useEffect(() => { onDrawStartRef.current = onDrawStart; }, [onDrawStart]);
   useEffect(() => { onDrawFinishedRef.current = onDrawFinished; }, [onDrawFinished]);
   useEffect(() => { onSelectionChangeRef.current = onSelectionChange; }, [onSelectionChange]);
 
@@ -459,6 +462,7 @@ const Canvas = forwardRef(({
 
       // Dedicated Eraser Tool handling: Partial segment trimming & point splitting
       if (e.button === 0 && activeTool === "eraser") {
+        if (onDrawStartRef.current) onDrawStartRef.current();
         state.isDrawing = true;
         state.selectedIds = [];
         state.selectionBox = null;
@@ -484,6 +488,7 @@ const Canvas = forwardRef(({
 
       // Drawing tools
       if (e.button === 0 && ["rect", "diamond", "ellipse", "arrow", "line", "pen"].includes(activeTool)) {
+        if (onDrawStartRef.current) onDrawStartRef.current();
         state.isDrawing = true;
         state.dragStartPos = globalPos;
 
@@ -652,10 +657,6 @@ const Canvas = forwardRef(({
         state.currentStroke = [];
         drawCanvas();
         if (onDrawFinishedRef.current) onDrawFinishedRef.current();
-
-        if (!isLocked && onToolAutoRevert && activeTool !== "eraser") {
-          onToolAutoRevert();
-        }
       }
 
       state.isPanning = false;
@@ -1116,12 +1117,106 @@ const simplifyStrokePoints = (points) => {
 const convertDrawCommandToStrokes = (cmd, inkColor) => {
   const strokes = [];
   const [ox, oy] = cmd.origin || [0, 0];
+  const strokeWidth = cmd.width || 3;
+  const closedSet = new Set(cmd.closed || []);
+  const fillSet = new Set(cmd.fill || []);
+
   for (let i = 0; i < (cmd.types || []).length; i++) {
     const type = cmd.types[i];
     const item = cmd.items[i];
     if (!item) continue;
-    if (type === "rect") {
-      strokes.push({ id: `el_${Date.now()}_${i}`, elementType: "rect", x: ox + item[0], y: oy + item[1], width: item[2], height: item[3], strokeColor: inkColor });
+    const uid = `el_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_${i}`;
+
+    if (type === "line" || type === "smooth") {
+      // item is a flat array of [x1,y1,x2,y2,...] coordinate pairs relative to origin
+      const points = [];
+      for (let j = 0; j < item.length; j += 2) {
+        points.push({ x: ox + item[j], y: oy + item[j + 1] });
+      }
+      // Close the path if index is in the closed list
+      if (closedSet.has(i) && points.length > 1) {
+        points.push({ ...points[0] });
+      }
+      if (points.length >= 2) {
+        strokes.push({
+          id: uid,
+          elementType: "pen",
+          points,
+          strokeColor: inkColor,
+          strokeWidth,
+          strokeStyle: "solid",
+          opacity: 100
+        });
+      }
+    } else if (type === "rect") {
+      // item is [x, y, w, h] relative to origin
+      strokes.push({
+        id: uid,
+        elementType: "rect",
+        x: ox + item[0],
+        y: oy + item[1],
+        width: item[2],
+        height: item[3],
+        strokeColor: inkColor,
+        backgroundColor: fillSet.has(i) ? inkColor : "transparent",
+        strokeWidth,
+        strokeStyle: "solid",
+        opacity: 100
+      });
+    } else if (type === "ellipse") {
+      // item is [cx, cy, rx, ry] relative to origin
+      const cx = ox + item[0], cy = oy + item[1], rx = item[2], ry = item[3];
+      strokes.push({
+        id: uid,
+        elementType: "ellipse",
+        x: cx - rx,
+        y: cy - ry,
+        width: rx * 2,
+        height: ry * 2,
+        strokeColor: inkColor,
+        backgroundColor: fillSet.has(i) ? inkColor : "transparent",
+        strokeWidth,
+        strokeStyle: "solid",
+        opacity: 100
+      });
+    } else if (type === "circle") {
+      // item is [cx, cy, r] relative to origin
+      const cx = ox + item[0], cy = oy + item[1], r = item[2];
+      strokes.push({
+        id: uid,
+        elementType: "ellipse",
+        x: cx - r,
+        y: cy - r,
+        width: r * 2,
+        height: r * 2,
+        strokeColor: inkColor,
+        backgroundColor: fillSet.has(i) ? inkColor : "transparent",
+        strokeWidth,
+        strokeStyle: "solid",
+        opacity: 100
+      });
+    } else if (type === "arc") {
+      // item is [cx, cy, rx, ry, startDeg, sweepDeg] — generate polyline approximation
+      const cx = ox + item[0], cy = oy + item[1];
+      const rx = item[2], ry = item[3];
+      const startDeg = item[4], sweepDeg = item[5];
+      const STEPS = Math.max(20, Math.abs(sweepDeg));
+      const points = [];
+      for (let s = 0; s <= STEPS; s++) {
+        const angle = ((startDeg + (sweepDeg * s) / STEPS) * Math.PI) / 180;
+        points.push({ x: cx + rx * Math.cos(angle), y: cy + ry * Math.sin(angle) });
+      }
+      if (points.length >= 2) {
+        strokes.push({
+          id: uid,
+          elementType: "pen",
+          points,
+          strokeColor: inkColor,
+          strokeWidth,
+          strokeStyle: "solid",
+          opacity: 100
+        });
+      }
     }
   }
   return strokes;

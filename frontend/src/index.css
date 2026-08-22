@@ -105,7 +105,7 @@ body[data-theme="studio"] {
 }
 
 .topbar {
-  position: absolute;
+  position: fixed;
   top: 20px;
   left: 50%;
   transform: translateX(-50%);
@@ -472,7 +472,7 @@ body[data-theme="arcane"] .loading-spinner {
 
 /* AI Orb Popover Action Menu */
 .ai-orb-container {
-  position: absolute;
+  position: fixed;
   bottom: 32px;
   right: 32px;
   z-index: 100;

@@ -63,7 +63,7 @@ export default function App() {
   const isAiEnabledRef = useRef(isAiEnabled);
 
   // Excalidraw-parity Toolset State
-  const [isLocked, setIsLocked] = useState(false);
+  const [isLocked, setIsLocked] = useState(true);
   const [selectedElements, setSelectedElements] = useState([]);
   const [currentStyle, setCurrentStyle] = useState({
     strokeColor: "#2e231d",
@@ -182,6 +182,13 @@ export default function App() {
 
   const handleViewportChange = (vp) => {
     setViewport(vp);
+  };
+
+  const handleDrawStart = () => {
+    if (autoTriggerTimer.current) {
+      clearTimeout(autoTriggerTimer.current);
+      autoTriggerTimer.current = null;
+    }
   };
 
   const handleDrawFinished = () => {
@@ -584,6 +591,7 @@ export default function App() {
         activeTool={activeTool} 
         theme={theme}
         onViewportChange={handleViewportChange}
+        onDrawStart={handleDrawStart}
         onDrawFinished={handleDrawFinished}
         drafts={drafts}
         isLocked={isLocked}
