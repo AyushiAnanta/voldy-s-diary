@@ -316,6 +316,24 @@ const Canvas = forwardRef(({
 
     renderStrokesArray(ctx, state.strokes, inkColor, paperColor);
 
+    // Render unaccepted drafts visual previews (draw vector shapes & plot_function curves)
+    if (drafts && drafts.length > 0) {
+      ctx.save();
+      drafts.forEach(draft => {
+        if (!draft.accepted && draft.rawCommand) {
+          const cmd = draft.rawCommand;
+          if (cmd.tool === "plot_function") {
+            const plotStrokes = convertPlotCommandToStrokes(cmd, accentColor);
+            renderStrokesArray(ctx, plotStrokes, accentColor, paperColor);
+          } else if (cmd.tool === "draw") {
+            const drawStrokes = convertDrawCommandToStrokes(cmd, accentColor);
+            renderStrokesArray(ctx, drawStrokes, accentColor, paperColor);
+          }
+        }
+      });
+      ctx.restore();
+    }
+
     // Render active drawing shape preview
     if (state.isDrawing && state.currentShape) {
       renderSingleElement(ctx, state.currentShape, inkColor, paperColor);
@@ -1223,8 +1241,143 @@ const convertDrawCommandToStrokes = (cmd, inkColor) => {
 };
 
 const convertPlotCommandToStrokes = (cmd, inkColor) => {
+  const { x = 0, y = 0, w = 400, h = 300, expression } = cmd;
   const strokes = [];
-  const { x = 0, y = 0, w = 400, h = 300 } = cmd;
-  strokes.push({ id: `el_${Date.now()}_plot`, elementType: "rect", x, y, width: w, height: h, strokeColor: inkColor });
+  const axisColor = inkColor;
+
+  // Clean expression: remove leading "y=", "y =", "f(x)=", "f(x) =" if present
+  let cleanExpr = typeof expression === "string" ? expression.trim() : "x";
+  cleanExpr = cleanExpr.replace(/^(y\s*=\s*|f\s*\(\s*x\s*\)\s*=\s*)/i, "");
+
+  // Domain & Range in Math Coordinates
+  const xMin = -6, xMax = 6;
+  const yMin = -6, yMax = 6;
+
+  // Coordinate mapper from Math coords (xm, ym) -> Canvas coords (cx, cy)
+  const toCanvasCoords = (xm, ym) => {
+    const cx = x + ((xm - xMin) / (xMax - xMin)) * w;
+    const cy = y + ((yMax - ym) / (yMax - yMin)) * h;
+    return { x: cx, y: cy };
+  };
+
+  const originCanvas = toCanvasCoords(0, 0);
+
+  // 1. Outer Frame Box (rect)
+  strokes.push({
+    id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_frame`,
+    elementType: "rect",
+    x,
+    y,
+    width: w,
+    height: h,
+    strokeColor: inkColor,
+    backgroundColor: "transparent",
+    strokeWidth: 2,
+    strokeStyle: "solid",
+    opacity: 50
+  });
+
+  // 2. X-Axis (horizontal arrow through 0,0)
+  strokes.push({
+    id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_xaxis`,
+    elementType: "arrow",
+    x: x + 4,
+    y: originCanvas.y,
+    width: w - 8,
+    height: 0,
+    strokeColor: axisColor,
+    strokeWidth: 1.5,
+    strokeStyle: "solid",
+    opacity: 70
+  });
+
+  // 3. Y-Axis (vertical arrow through 0,0)
+  strokes.push({
+    id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_yaxis`,
+    elementType: "arrow",
+    x: originCanvas.x,
+    y: y + h - 4,
+    width: 0,
+    height: -(h - 8),
+    strokeColor: axisColor,
+    strokeWidth: 1.5,
+    strokeStyle: "solid",
+    opacity: 70
+  });
+
+  // 4. Tick Marks
+  for (let tickX = -5; tickX <= 5; tickX += 1) {
+    if (tickX === 0) continue;
+    const pt = toCanvasCoords(tickX, 0);
+    strokes.push({
+      id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_tickx_${tickX}`,
+      elementType: "line",
+      x: pt.x,
+      y: pt.y - 4,
+      width: 0,
+      height: 8,
+      strokeColor: axisColor,
+      strokeWidth: 1.2,
+      strokeStyle: "solid",
+      opacity: 60
+    });
+  }
+  for (let tickY = -5; tickY <= 5; tickY += 1) {
+    if (tickY === 0) continue;
+    const pt = toCanvasCoords(0, tickY);
+    strokes.push({
+      id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_ticky_${tickY}`,
+      elementType: "line",
+      x: pt.x - 4,
+      y: pt.y,
+      width: 8,
+      height: 0,
+      strokeColor: axisColor,
+      strokeWidth: 1.2,
+      strokeStyle: "solid",
+      opacity: 60
+    });
+  }
+
+  // 5. Evaluate and Sample Mathematical Function Curve over 150 points
+  const steps = 150;
+  let currentSegment = [];
+
+  for (let i = 0; i <= steps; i++) {
+    const xm = xMin + (i / steps) * (xMax - xMin);
+    const res = evaluateMathExpression(cleanExpr, xm);
+
+    if (res && res.ok && typeof res.value === "number" && !isNaN(res.value) && isFinite(res.value) && res.value >= yMin && res.value <= yMax) {
+      const pt = toCanvasCoords(xm, res.value);
+      currentSegment.push(pt);
+    } else {
+      // Discontinuity, asymptote, or out-of-range -> flush current curve segment
+      if (currentSegment.length >= 2) {
+        strokes.push({
+          id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_curve_${strokes.length}`,
+          elementType: "pen",
+          points: [...currentSegment],
+          strokeColor: inkColor,
+          strokeWidth: 3,
+          strokeStyle: "solid",
+          opacity: 100
+        });
+      }
+      currentSegment = [];
+    }
+  }
+
+  if (currentSegment.length >= 2) {
+    strokes.push({
+      id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_curve_${strokes.length}`,
+      elementType: "pen",
+      points: currentSegment,
+      strokeColor: inkColor,
+      strokeWidth: 3,
+      strokeStyle: "solid",
+      opacity: 100
+    });
+  }
+
   return strokes;
 };

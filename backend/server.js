@@ -289,35 +289,50 @@ app.post("/api/canvas-ai", async (req, res) => {
 
     let responseText = "";
     let usedModel = modelName;
+    let attempts = 0;
+    const maxAttempts = 2;
+    let geminiSuccess = false;
 
-    try {
-      console.log(`Sending canvas-ai request to model ${modelName}...`);
-      const result = await model.generateContent(parts);
-      responseText = result.response.text();
+    while (attempts < maxAttempts && !geminiSuccess) {
+      try {
+        attempts++;
+        console.log(`Sending canvas-ai request to model ${modelName} (attempt ${attempts}/${maxAttempts})...`);
+        const result = await model.generateContent(parts);
+        responseText = result.response.text();
 
-      const usage = result.response.usageMetadata;
-      if (usage) {
-        console.log(`[Gemini Usage Metadata] ReasoningLevel: ${reasoningLevel} | PromptTokens: ${usage.promptTokenCount || 0} | OutputTokens: ${usage.candidatesTokenCount || 0} | ThoughtsTokens: ${usage.thoughtsTokenCount || 0} | TotalTokens: ${usage.totalTokenCount || 0}`);
+        const usage = result.response.usageMetadata;
+        if (usage) {
+          console.log(`[Gemini Usage Metadata] ReasoningLevel: ${reasoningLevel} | PromptTokens: ${usage.promptTokenCount || 0} | OutputTokens: ${usage.candidatesTokenCount || 0} | ThoughtsTokens: ${usage.thoughtsTokenCount || 0} | TotalTokens: ${usage.totalTokenCount || 0}`);
+        }
+        console.log("Raw Gemini response received:", responseText);
+        geminiSuccess = true;
+      } catch (geminiError) {
+        console.warn(`[Gemini Attempt ${attempts} Failed] ${geminiError.message || geminiError}`);
+        const is503 = (geminiError.message || "").includes("503") || (geminiError.status === 503);
+        if (attempts < maxAttempts && is503) {
+          console.log("Transient 503 Service Unavailable spike detected. Retrying in 1200ms...");
+          await new Promise(r => setTimeout(r, 1200));
+        } else if (attempts >= maxAttempts) {
+          console.warn(`\n[AI ENGINE FAILURE ALERT] Primary Model (${modelName}) threw an exception.`);
+          console.warn(`  Reason: ${geminiError.message || geminiError}`);
+          console.warn(`  Full Error Trace: ${geminiError.stack || 'N/A'}`);
+          console.warn(`  Action: Initiating OpenRouter Vision fallback chain (Dots3-Note -> Gemma 4)...`);
+          
+          const openRouterRes = await callOpenRouterVision({
+            systemPrompt: activeSystemPrompt,
+            promptText,
+            base64Data,
+            mimeType,
+            temperature,
+            maxOutputTokens
+          });
+
+          responseText = openRouterRes.responseText;
+          usedModel = openRouterRes.usedModel;
+          console.log(`\n[AI ENGINE FALLBACK RESOLVED] Successfully answered via: ${usedModel}\n`);
+          break;
+        }
       }
-      console.log("Raw Gemini response received:", responseText);
-    } catch (geminiError) {
-      console.warn(`\n[AI ENGINE FAILURE ALERT] Primary Model (${modelName}) threw an exception.`);
-      console.warn(`  Reason: ${geminiError.message || geminiError}`);
-      console.warn(`  Full Error Trace: ${geminiError.stack || 'N/A'}`);
-      console.warn(`  Action: Initiating OpenRouter Vision fallback chain (Dots3-Note -> Gemma 4)...`);
-      
-      const openRouterRes = await callOpenRouterVision({
-        systemPrompt: activeSystemPrompt,
-        promptText,
-        base64Data,
-        mimeType,
-        temperature,
-        maxOutputTokens
-      });
-
-      responseText = openRouterRes.responseText;
-      usedModel = openRouterRes.usedModel;
-      console.log(`\n[AI ENGINE FALLBACK RESOLVED] Successfully answered via: ${usedModel}\n`);
     }
 
     // Parse the strict JSON return format expected by PenEcho client
