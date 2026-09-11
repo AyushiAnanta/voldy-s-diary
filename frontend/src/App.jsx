@@ -267,7 +267,7 @@ export default function App() {
           if (cmd.tool === "write_text") {
             content = cmd.text;
           } else if (cmd.tool === "draw_formula") {
-            content = `$$\n${cmd.formula}\n$$`;
+            content = `$$\n${cmd.latex}\n$$`;
           } else if (cmd.tool === "draw") {
             content = `🎨 Vector Shape: ${cmd.types ? cmd.types.join(", ") : "Diagram"}`;
           } else if (cmd.tool === "plot_function") {
