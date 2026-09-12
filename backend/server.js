@@ -96,6 +96,77 @@ function fileToGenerativePart(base64Data, mimeType) {
   };
 }
 
+const AI_CANVAS_SIZE = 20000;
+const AI_MAX_COMMANDS = 16;
+const AI_MAX_TEXT_LENGTH = 800;
+const AI_TOOLS = new Set(["write_text", "draw_formula", "plot_function", "draw"]);
+const AI_DRAW_TYPES = new Set(["line", "smooth", "rect", "ellipse", "circle", "arc"]);
+const AI_PLOT_EXPRESSION = /^[0-9a-zA-Z_+\-*/^().,\s]+$/;
+
+const finiteNumber = value => typeof value === "number" && Number.isFinite(value);
+const insideCanvas = (x, y) => finiteNumber(x) && finiteNumber(y) && x >= 0 && y >= 0 && x <= AI_CANVAS_SIZE && y <= AI_CANVAS_SIZE;
+
+function validateAiCommand(command) {
+  if (!command || typeof command !== "object" || !AI_TOOLS.has(command.tool)) return false;
+
+  if (command.tool === "write_text") {
+    return insideCanvas(command.x, command.y) &&
+      typeof command.text === "string" &&
+      command.text.length > 0 &&
+      command.text.length <= AI_MAX_TEXT_LENGTH &&
+      finiteNumber(command.fontSize) && command.fontSize >= 8 && command.fontSize <= 144 &&
+      finiteNumber(command.maxWidth) && command.maxWidth >= 40 && command.maxWidth <= 2000 &&
+      finiteNumber(command.lineHeight) && command.lineHeight >= 0.8 && command.lineHeight <= 3;
+  }
+
+  if (command.tool === "draw_formula") {
+    return insideCanvas(command.x, command.y) &&
+      typeof command.latex === "string" &&
+      command.latex.length > 0 &&
+      command.latex.length <= AI_MAX_TEXT_LENGTH &&
+      finiteNumber(command.fontSize) && command.fontSize >= 8 && command.fontSize <= 144;
+  }
+
+  if (command.tool === "plot_function") {
+    return insideCanvas(command.x, command.y) &&
+      finiteNumber(command.w) && finiteNumber(command.h) &&
+      command.w >= 240 && command.h >= 180 &&
+      command.w <= AI_CANVAS_SIZE && command.h <= AI_CANVAS_SIZE &&
+      command.x + command.w <= AI_CANVAS_SIZE &&
+      command.y + command.h <= AI_CANVAS_SIZE &&
+      typeof command.expression === "string" &&
+      command.expression.length > 0 &&
+      command.expression.length <= 500 &&
+      AI_PLOT_EXPRESSION.test(command.expression);
+  }
+
+  return Array.isArray(command.origin) &&
+    command.origin.length === 2 &&
+    command.origin.every(Number.isInteger) &&
+    insideCanvas(command.origin[0], command.origin[1]) &&
+    Array.isArray(command.types) &&
+    Array.isArray(command.items) &&
+    command.types.length > 0 &&
+    command.types.length === command.items.length &&
+    command.types.length <= 64 &&
+    command.types.every(type => AI_DRAW_TYPES.has(type)) &&
+    command.items.every(item => Array.isArray(item) && item.length > 0 && item.every(finiteNumber)) &&
+    (command.width === undefined || (Number.isInteger(command.width) && command.width >= 2 && command.width <= 200));
+}
+
+function normalizeAiResult(result) {
+  const commands = Array.isArray(result?.commands)
+    ? result.commands.filter(validateAiCommand).slice(0, AI_MAX_COMMANDS)
+    : [];
+
+  return {
+    intent: typeof result?.intent === "string" ? result.intent : "none",
+    observedText: typeof result?.observedText === "string" ? result.observedText.slice(0, AI_MAX_TEXT_LENGTH) : "",
+    message: typeof result?.message === "string" ? result.message.slice(0, AI_MAX_TEXT_LENGTH) : "",
+    commands
+  };
+}
+
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 /**
@@ -371,8 +442,9 @@ app.post("/api/canvas-ai", async (req, res) => {
       };
     }
 
-    parsedResult.provider = usedModel;
-    res.json(parsedResult);
+    const normalizedResult = normalizeAiResult(parsedResult);
+    normalizedResult.provider = usedModel;
+    res.json(normalizedResult);
 
   } catch (error) {
     console.error("Error processing Canvas AI request:", error);

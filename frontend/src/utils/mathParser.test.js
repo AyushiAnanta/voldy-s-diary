@@ -115,8 +115,28 @@ describe("Safe Math Parser Security & Functionality Test Suite", () => {
 
 import { normalizeReasoningLevel, normalizeTheme, normalizeViewport, normalizeElement } from "./storage.js";
 import { WORLD_ORIGIN, screenToWorld, worldToScreen } from "./coordinates.js";
+import { validateAiCommands } from "./aiCommands.js";
 
 describe("State Normalization & Backward Compatibility Test Suite", () => {
+  test("AI command validation keeps safe commands and rejects malformed commands", () => {
+    const valid = {
+      tool: "plot_function",
+      x: 9000,
+      y: 7000,
+      w: 1200,
+      h: 800,
+      expression: "sin(x) + 2*x"
+    };
+    const invalid = [
+      { tool: "unknown", x: 1, y: 1 },
+      { tool: "plot_function", x: 1, y: 1, w: 1200, h: 800, expression: "alert(x)" },
+      { tool: "draw_formula", x: Infinity, y: 1, latex: "x^2", fontSize: 20 }
+    ];
+
+    assert.strictEqual(validateAiCommands([valid, ...invalid]).length, 1);
+    assert.deepStrictEqual(validateAiCommands([valid])[0], valid);
+  });
+
   test("Coordinate transforms round-trip world points across viewport states", () => {
     const viewports = [
       { panX: 0, panY: 0, zoom: 1 },

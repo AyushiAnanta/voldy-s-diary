@@ -31,6 +31,7 @@ import {
   normalizeTheme
 } from "./utils/storage.js";
 import { WORLD_ORIGIN } from "./utils/coordinates.js";
+import { validateAiCommands } from "./utils/aiCommands.js";
 
 const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -283,8 +284,12 @@ export default function App() {
         throw new Error(data.detail || data.error);
       }
 
-      if (data.commands && data.commands.length > 0) {
-        const newDrafts = data.commands.map((cmd, index) => {
+      const validCommands = validateAiCommands(data.commands);
+      if (validCommands.length > 0) {
+        if (validCommands.length !== (Array.isArray(data.commands) ? data.commands.length : 0)) {
+          showError("AI returned unsupported or malformed commands; invalid commands were discarded.");
+        }
+        const newDrafts = validCommands.map((cmd, index) => {
           let content = "";
           
           if (cmd.tool === "write_text") {
