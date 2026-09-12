@@ -67,6 +67,27 @@ describe("Safe Math Parser Security & Functionality Test Suite", () => {
     assert.strictEqual(res.value, 17);
   });
 
+  test("Valid Evaluation: Implicit multiplication across values and groups", () => {
+    assert.strictEqual(evaluateMathExpression("2pi", 0).value, 2 * Math.PI);
+    assert.strictEqual(evaluateMathExpression("x(x + 1)", 3).value, 12);
+    assert.strictEqual(evaluateMathExpression("(x + 1)(x - 1)", 3).value, 8);
+    assert.strictEqual(evaluateMathExpression("2sin(x)", Math.PI / 2).value, 2);
+    assert.strictEqual(evaluateMathExpression("3sqrt(4)", 0).value, 6);
+  });
+
+  test("Invalid Evaluation: Adjacent numbers are not implicit multiplication", () => {
+    const res = evaluateMathExpression("2 3", 0);
+    assert.strictEqual(res.ok, false);
+    assert.strictEqual(res.reason, "invalid_syntax");
+  });
+
+  test("Precedence: exponentiation binds tighter than unary minus", () => {
+    assert.strictEqual(evaluateMathExpression("-2^2", 0).value, -4);
+    assert.strictEqual(evaluateMathExpression("(-2)^2", 0).value, 4);
+    assert.strictEqual(evaluateMathExpression("2^-2", 0).value, 0.25);
+    assert.strictEqual(evaluateMathExpression("2^3^2", 0).value, 512);
+  });
+
   test("Precedence: '1/0+' returns invalid_syntax, not discontinuity", () => {
     const res = evaluateMathExpression("1/0+", 2);
     assert.strictEqual(res.ok, false);
@@ -296,4 +317,3 @@ describe("State Normalization & Backward Compatibility Test Suite", () => {
     assert.deepStrictEqual(purged.map(s => s.id), ["1", "4"]);
   });
 });
-

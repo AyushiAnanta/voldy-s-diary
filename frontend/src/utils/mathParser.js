@@ -14,6 +14,7 @@ const MAX_RECURSION_DEPTH = 15;
  */
 const TOKEN_TYPES = {
   NUMBER: "NUMBER",
+  CONSTANT: "CONSTANT",
   VARIABLE: "VARIABLE",
   OPERATOR: "OPERATOR",
   FUNCTION: "FUNCTION",
@@ -62,7 +63,7 @@ function tokenize(expr) {
     // Identifiers (variables, functions, constants)
     if (/[a-zA-Z_]/.test(char)) {
       let ident = "";
-      while (i < expr.length && /[a-zA-Z0-9_]/.test(expr[i])) {
+      while (i < expr.length && /[a-zA-Z_]/.test(expr[i])) {
         ident += expr[i];
         i++;
       }
@@ -73,7 +74,7 @@ function tokenize(expr) {
       } else if (lower === "x") {
         tokens.push({ type: TOKEN_TYPES.VARIABLE, value: "x" });
       } else if (Object.hasOwn(CONSTANTS, ident)) {
-        tokens.push({ type: TOKEN_TYPES.NUMBER, value: CONSTANTS[ident] });
+        tokens.push({ type: TOKEN_TYPES.CONSTANT, value: CONSTANTS[ident] });
       } else {
         // Unknown identifier -> invalid
         return null;
@@ -155,12 +156,12 @@ class MathParser {
   }
 
   parseTerm() {
-    let left = this.parsePower();
+    let left = this.parseUnary();
     if (left === null) return null;
 
     while (this.peek().type === TOKEN_TYPES.OPERATOR && ("*/".includes(this.peek().value))) {
       const op = this.consume().value;
-      const right = this.parsePower();
+      const right = this.parseUnary();
       if (right === null) return null;
       
       if (op === "*") {
@@ -177,12 +178,12 @@ class MathParser {
   }
 
   parsePower() {
-    let left = this.parseUnary();
+    let left = this.parsePrimary();
     if (left === null) return null;
 
     if (this.peek().type === TOKEN_TYPES.OPERATOR && this.peek().value === "^") {
       this.consume();
-      const right = this.parsePower(); // right-associative
+      const right = this.parseUnary(); // right-associative; permits negative exponents
       if (right === null) return null;
       left = Math.pow(left, right);
     }
@@ -197,7 +198,7 @@ class MathParser {
     if (this.match(TOKEN_TYPES.OPERATOR, "+")) {
       return this.parseUnary();
     }
-    return this.parsePrimary();
+    return this.parsePower();
   }
 
   parsePrimary() {
@@ -210,7 +211,7 @@ class MathParser {
     try {
       const token = this.peek();
 
-      if (token.type === TOKEN_TYPES.NUMBER) {
+      if (token.type === TOKEN_TYPES.NUMBER || token.type === TOKEN_TYPES.CONSTANT) {
         this.consume();
         return token.value;
       }
@@ -288,6 +289,38 @@ class MathParser {
   }
 }
 
+function addImplicitMultiplication(tokens) {
+  const result = [];
+  const canEndValue = token => (
+    token.type === TOKEN_TYPES.NUMBER ||
+    token.type === TOKEN_TYPES.CONSTANT ||
+    token.type === TOKEN_TYPES.VARIABLE ||
+    token.type === TOKEN_TYPES.RPAREN
+  );
+  const canStartValue = token => (
+    token.type === TOKEN_TYPES.NUMBER ||
+    token.type === TOKEN_TYPES.CONSTANT ||
+    token.type === TOKEN_TYPES.VARIABLE ||
+    token.type === TOKEN_TYPES.FUNCTION ||
+    token.type === TOKEN_TYPES.LPAREN
+  );
+
+  for (const token of tokens) {
+    const previous = result[result.length - 1];
+    const shouldMultiply = previous &&
+      canEndValue(previous) &&
+      canStartValue(token) &&
+      !(previous.type === TOKEN_TYPES.NUMBER && token.type === TOKEN_TYPES.NUMBER);
+
+    if (shouldMultiply) {
+      result.push({ type: TOKEN_TYPES.OPERATOR, value: "*" });
+    }
+    result.push(token);
+  }
+
+  return result;
+}
+
 /**
  * Main evaluation entry point
  * @param {string} exprStr - Mathematical expression string
@@ -304,15 +337,11 @@ export function evaluateMathExpression(exprStr, xVal) {
     return { ok: false, reason: "length_exceeded" };
   }
 
-  // Pre-process implicit multiplication (e.g., "3x" -> "3*x", "3sin(x)" -> "3*sin(x)")
-  const sanitized = trimmed
-    .replace(/(\d)\s*([a-zA-Z\(])/g, "$1*$2")
-    .replace(/(\))\s*([0-9a-zA-Z\(])/g, "$1*$2");
-
-  const tokens = tokenize(sanitized);
-  if (!tokens) {
+  const rawTokens = tokenize(trimmed);
+  if (!rawTokens) {
     return { ok: false, reason: "invalid_syntax" };
   }
+  const tokens = addImplicitMultiplication(rawTokens);
 
   const parser = new MathParser(tokens, xVal);
   const result = parser.parseExpression();
