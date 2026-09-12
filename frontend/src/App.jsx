@@ -276,7 +276,10 @@ export default function App() {
             content = "AI Generated Content";
           }
 
-          const [x, y] = cmd.position || [cropData.cropX + cropData.cropWidth + 40, cropData.cropY + index * 120];
+          const fallbackX = cropData.cropX + cropData.cropWidth + 40;
+          const fallbackY = cropData.cropY + index * 120;
+          const x = Number.isFinite(cmd.x) ? cmd.x : fallbackX;
+          const y = Number.isFinite(cmd.y) ? cmd.y : fallbackY;
 
           return {
             id: `draft_${Date.now()}_${index}`,
@@ -323,6 +326,10 @@ export default function App() {
         triggerAutoSave();
       } else if (draft.rawCommand.tool === "plot_function") {
         canvasRef.current.bakePlotCommand(draft.rawCommand);
+        setDrafts(prev => prev.filter(d => d.id !== id));
+        triggerAutoSave();
+      } else if (draft.rawCommand.tool === "write_text" || draft.rawCommand.tool === "draw_formula") {
+        canvasRef.current.bakeTextCommand(draft.rawCommand);
         setDrafts(prev => prev.filter(d => d.id !== id));
         triggerAutoSave();
       } else {

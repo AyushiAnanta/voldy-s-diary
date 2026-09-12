@@ -91,7 +91,7 @@ const Canvas = forwardRef(({
 
     loadCanvasState: (savedStrokes, savedViewport) => {
       if (Array.isArray(savedStrokes)) {
-        stateRef.current.strokes = savedStrokes.filter(s => s.elementType !== "text");
+        stateRef.current.strokes = savedStrokes;
       }
       if (savedViewport) {
         const MAX_PAN = 12000;
@@ -218,6 +218,14 @@ const Canvas = forwardRef(({
       const activeColors = THEME_COLORS[theme] || THEME_COLORS.arcane;
       const inkColor = activeColors.ink;
       const newStrokes = convertPlotCommandToStrokes(cmd, inkColor);
+      stateRef.current.strokes.push(...newStrokes);
+      drawCanvas();
+    },
+
+    bakeTextCommand: (cmd) => {
+      const activeColors = THEME_COLORS[theme] || THEME_COLORS.arcane;
+      const inkColor = activeColors.ink;
+      const newStrokes = convertTextCommandToStrokes(cmd, inkColor);
       stateRef.current.strokes.push(...newStrokes);
       drawCanvas();
     },
@@ -756,6 +764,35 @@ const renderStrokesArray = (ctx, strokes, inkColor, paperColor) => {
   strokes.forEach(el => renderSingleElement(ctx, el, inkColor, paperColor));
 };
 
+const wrapTextLines = (text, maxWidth, fontSize, ctx) => {
+  const raw = String(text ?? "");
+  if (!raw) return [""];
+  const segments = raw.split(/\n/);
+  const lines = [];
+
+  for (const segment of segments) {
+    if (!segment.trim()) {
+      lines.push("");
+      continue;
+    }
+
+    const words = segment.split(/\s+/);
+    let current = "";
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (ctx.measureText(candidate).width <= maxWidth || current === "") {
+        current = candidate;
+      } else {
+        lines.push(current);
+        current = word;
+      }
+    }
+    if (current) lines.push(current);
+  }
+
+  return lines.length > 0 ? lines : [""];
+};
+
 const renderSingleElement = (ctx, el, inkColor, paperColor) => {
   ctx.save();
 
@@ -775,7 +812,21 @@ const renderSingleElement = (ctx, el, inkColor, paperColor) => {
   ctx.strokeStyle = el.elementType === "eraser" ? paperColor : sColor;
   ctx.fillStyle = bgColor;
 
-  if (el.elementType === "rect") {
+  if (el.elementType === "text" || el.elementType === "formula") {
+    const textContent = String(el.text || el.latex || "");
+    const fontSize = el.fontSize || 20;
+    const lineHeight = el.lineHeight || 1.3;
+    const textWidth = Math.max(80, w || 180);
+    ctx.font = `${el.fontWeight || 600} ${fontSize}px "Segoe UI", sans-serif`;
+    ctx.textBaseline = "top";
+    ctx.fillStyle = sColor;
+
+    const lines = wrapTextLines(textContent, textWidth, fontSize, ctx);
+    lines.forEach((line, index) => {
+      const ty = y + index * fontSize * lineHeight;
+      ctx.fillText(line, x, ty);
+    });
+  } else if (el.elementType === "rect") {
     ctx.beginPath();
     ctx.rect(x, y, w, h);
     if (bgColor !== "transparent") ctx.fill();
@@ -1130,6 +1181,63 @@ const simplifyStrokePoints = (points) => {
   }
   result.push(points[points.length - 1]);
   return result;
+};
+
+const estimateTextBlockSize = (text, maxWidth, fontSize, lineHeight) => {
+  const raw = String(text ?? "");
+  if (!raw) return { width: maxWidth, height: fontSize * lineHeight };
+
+  const charWidth = fontSize * 0.58;
+  const lines = raw.split(/\n/);
+  let width = 0;
+  lines.forEach(line => {
+    const approx = line.length * charWidth;
+    if (approx > width) width = approx;
+  });
+
+  const wrappedLines = raw.split(/\s+/).reduce((acc, word) => {
+    const candidate = acc.current ? `${acc.current} ${word}` : word;
+    if (candidate.length * charWidth <= maxWidth || !acc.current) {
+      acc.current = candidate;
+    } else {
+      acc.lines.push(acc.current);
+      acc.current = word;
+    }
+    return acc;
+  }, { current: "", lines: [] });
+
+  if (wrappedLines.current) wrappedLines.lines.push(wrappedLines.current);
+  const lineCount = wrappedLines.lines.length || 1;
+  const height = lineCount * fontSize * lineHeight;
+  return { width: Math.max(maxWidth, Math.min(600, width + 12)), height };
+};
+
+const convertTextCommandToStrokes = (cmd, inkColor) => {
+  const x = Number.isFinite(cmd.x) ? cmd.x : 0;
+  const y = Number.isFinite(cmd.y) ? cmd.y : 0;
+  const value = String(cmd.text || cmd.latex || cmd.content || "");
+  const elementType = cmd.tool === "draw_formula" ? "formula" : "text";
+  const fontSize = Number.isFinite(cmd.fontSize) ? cmd.fontSize : (elementType === "formula" ? 24 : 22);
+  const lineHeight = Number.isFinite(cmd.lineHeight) ? cmd.lineHeight : 1.3;
+  const maxWidth = Number.isFinite(cmd.width) ? cmd.width : (elementType === "formula" ? 280 : 240);
+  const size = estimateTextBlockSize(value, maxWidth, fontSize, lineHeight);
+
+  return [{
+    id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_text`,
+    elementType,
+    x,
+    y,
+    width: size.width,
+    height: size.height,
+    text: value,
+    latex: elementType === "formula" ? value : undefined,
+    fontSize,
+    lineHeight,
+    strokeColor: inkColor,
+    strokeWidth: 1,
+    strokeStyle: "solid",
+    opacity: 100
+  }];
 };
 
 const convertDrawCommandToStrokes = (cmd, inkColor) => {
