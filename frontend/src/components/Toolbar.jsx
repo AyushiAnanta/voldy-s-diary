@@ -13,6 +13,7 @@ import {
   Eraser,
   MoreVertical,
   Copy,
+  ClipboardPaste,
   Scissors,
   Trash2
 } from "lucide-react";
@@ -160,6 +161,9 @@ export default function Toolbar({
             </button>
             <button className="orb-action-btn" onClick={() => { onAction("cut"); setIsMenuOpen(false); }}>
               <Scissors size={15} /> <span>Cut</span>
+            </button>
+            <button className="orb-action-btn" onClick={() => { onAction("paste"); setIsMenuOpen(false); }}>
+              <ClipboardPaste size={15} /> <span>Paste</span>
             </button>
             <button className="orb-action-btn" onClick={() => { onAction("delete"); setIsMenuOpen(false); }}>
               <Trash2 size={15} /> <span>Delete</span>

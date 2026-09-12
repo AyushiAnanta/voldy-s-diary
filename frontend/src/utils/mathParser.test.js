@@ -114,8 +114,36 @@ describe("Safe Math Parser Security & Functionality Test Suite", () => {
 });
 
 import { normalizeReasoningLevel, normalizeTheme, normalizeViewport, normalizeElement } from "./storage.js";
+import { WORLD_ORIGIN, screenToWorld, worldToScreen } from "./coordinates.js";
 
 describe("State Normalization & Backward Compatibility Test Suite", () => {
+  test("Coordinate transforms round-trip world points across viewport states", () => {
+    const viewports = [
+      { panX: 0, panY: 0, zoom: 1 },
+      { panX: 240, panY: -130, zoom: 0.5 },
+      { panX: -800, panY: 420, zoom: 2.5 }
+    ];
+
+    for (const viewport of viewports) {
+      const screen = worldToScreen({
+        x: WORLD_ORIGIN + 125,
+        y: WORLD_ORIGIN - 80,
+        canvasWidth: 1200,
+        canvasHeight: 800,
+        ...viewport
+      });
+      const world = screenToWorld({
+        x: screen.x,
+        y: screen.y,
+        canvasWidth: 1200,
+        canvasHeight: 800,
+        ...viewport
+      });
+      assert.ok(Math.abs(world.x - (WORLD_ORIGIN + 125)) < 1e-9);
+      assert.ok(Math.abs(world.y - (WORLD_ORIGIN - 80)) < 1e-9);
+    }
+  });
+
   test("Normalizes legacy reasoning levels: 'none', 'low', 'medium' -> 'normal'", () => {
     assert.strictEqual(normalizeReasoningLevel("none"), "normal");
     assert.strictEqual(normalizeReasoningLevel("low"), "normal");

@@ -8,6 +8,8 @@
  * - Multi-tab broadcast synchronization with active-drawing locks
  */
 
+import { clampViewport } from "./coordinates.js";
+
 const DB_NAME = "VoldysDiaryDB";
 const DB_VERSION = 1;
 const STORE_NAME = "sessions";
@@ -147,19 +149,7 @@ export function normalizeTheme(input) {
  * Normalizes viewport translation & zoom against NaN, Infinity, and extreme out-of-bounds.
  */
 export function normalizeViewport(viewport) {
-  const MAX_PAN = 12000;
-  if (!viewport || typeof viewport !== "object") {
-    return { panX: 0, panY: 0, zoom: 1.0 };
-  }
-  const panX = typeof viewport.panX === "number" && Number.isFinite(viewport.panX) ? viewport.panX : 0;
-  const panY = typeof viewport.panY === "number" && Number.isFinite(viewport.panY) ? viewport.panY : 0;
-  const zoom = typeof viewport.zoom === "number" && Number.isFinite(viewport.zoom) ? viewport.zoom : 1.0;
-
-  return {
-    panX: Math.min(Math.max(panX, -MAX_PAN), MAX_PAN),
-    panY: Math.min(Math.max(panY, -MAX_PAN), MAX_PAN),
-    zoom: Math.min(Math.max(zoom, 0.15), 3.5)
-  };
+  return clampViewport(viewport);
 }
 
 /**
@@ -255,26 +245,66 @@ export async function clearSessionState() {
 export function subscribeToCrossTabSync(onRemoteUpdate, isDrawingActiveCheck) {
   if (!broadcastChannel) return () => {};
 
-  const handleMessage = async (event) => {
-    if (!event.data) return;
-    
-    // Check lock: If user is actively drawing in this tab, ignore/defer remote sync
+  let pendingRemoteState = null;
+  let flushTimer = null;
+  let latestRemoteTimestamp = 0;
+
+  const applyRemoteState = (state) => {
+    if (!state || !onRemoteUpdate) return;
+    onRemoteUpdate(state);
+  };
+
+  const flushPendingState = () => {
+    flushTimer = null;
     if (isDrawingActiveCheck && isDrawingActiveCheck()) {
+      flushTimer = setTimeout(flushPendingState, 100);
       return;
     }
 
+    if (pendingRemoteState) {
+      const state = pendingRemoteState;
+      pendingRemoteState = null;
+      applyRemoteState(state);
+    }
+  };
+
+  const receiveRemoteState = (state) => {
+    if (!state) return;
+    const timestamp = typeof state.timestamp === "number" ? state.timestamp : Date.now();
+    if (timestamp < latestRemoteTimestamp) return;
+    latestRemoteTimestamp = timestamp;
+    state.timestamp = timestamp;
+
+    if (isDrawingActiveCheck && isDrawingActiveCheck()) {
+      pendingRemoteState = state;
+      if (!flushTimer) {
+        flushTimer = setTimeout(flushPendingState, 100);
+      }
+      return;
+    }
+    applyRemoteState(state);
+  };
+
+  const handleMessage = async (event) => {
+    if (!event.data) return;
+
     if (event.data.type === "SESSION_UPDATED") {
       const updatedState = await loadSessionState();
-      if (updatedState && onRemoteUpdate) {
-        onRemoteUpdate(updatedState);
-      }
+      receiveRemoteState(updatedState);
     } else if (event.data.type === "SESSION_CLEARED") {
-      if (onRemoteUpdate) {
-        onRemoteUpdate({ strokes: [], drafts: [], viewport: { panX: 0, panY: 0, zoom: 1.0 } });
-      }
+      receiveRemoteState({
+        timestamp: Date.now(),
+        strokes: [],
+        drafts: [],
+        viewport: { panX: 0, panY: 0, zoom: 1.0 }
+      });
     }
   };
 
   broadcastChannel.addEventListener("message", handleMessage);
-  return () => broadcastChannel.removeEventListener("message", handleMessage);
+  return () => {
+    broadcastChannel.removeEventListener("message", handleMessage);
+    if (flushTimer) clearTimeout(flushTimer);
+    pendingRemoteState = null;
+  };
 }

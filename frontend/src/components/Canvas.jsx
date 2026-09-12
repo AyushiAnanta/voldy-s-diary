@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useImperativeHandle, forwardRef } from "react";
 import { evaluateMathExpression } from "../utils/mathParser.js";
+import { WORLD_ORIGIN, clampViewport, screenToWorld } from "../utils/coordinates.js";
 
 const THEME_COLORS = {
   arcane: {
@@ -94,19 +95,31 @@ const Canvas = forwardRef(({
         stateRef.current.strokes = savedStrokes;
       }
       if (savedViewport) {
-        const MAX_PAN = 12000;
-        const panX = typeof savedViewport.panX === "number" && Number.isFinite(savedViewport.panX) ? savedViewport.panX : 0;
-        const panY = typeof savedViewport.panY === "number" && Number.isFinite(savedViewport.panY) ? savedViewport.panY : 0;
-        const zoom = typeof savedViewport.zoom === "number" && Number.isFinite(savedViewport.zoom) ? savedViewport.zoom : 1.0;
-
-        stateRef.current.panX = Math.min(Math.max(panX, -MAX_PAN), MAX_PAN);
-        stateRef.current.panY = Math.min(Math.max(panY, -MAX_PAN), MAX_PAN);
-        stateRef.current.zoom = Math.min(Math.max(zoom, 0.15), 3.5);
+        const viewport = clampViewport(savedViewport);
+        stateRef.current.panX = viewport.panX;
+        stateRef.current.panY = viewport.panY;
+        stateRef.current.zoom = viewport.zoom;
         if (onViewportChangeRef.current) {
           onViewportChangeRef.current({ panX: stateRef.current.panX, panY: stateRef.current.panY, zoom: stateRef.current.zoom });
         }
       }
       drawCanvas();
+    },
+
+    setViewport: (nextViewport) => {
+      const viewport = clampViewport({
+        panX: stateRef.current.panX,
+        panY: stateRef.current.panY,
+        zoom: stateRef.current.zoom,
+        ...nextViewport
+      });
+      stateRef.current.panX = viewport.panX;
+      stateRef.current.panY = viewport.panY;
+      stateRef.current.zoom = viewport.zoom;
+      drawCanvas();
+      if (onViewportChangeRef.current) {
+        onViewportChangeRef.current(viewport);
+      }
     },
 
     isDrawingActive: () => {
@@ -249,6 +262,17 @@ const Canvas = forwardRef(({
         state.clipboardStyle = JSON.parse(JSON.stringify(selected));
         state.strokes = state.strokes.filter(s => !state.selectedIds.includes(s.id));
         state.selectedIds = [];
+      } else if (action === "paste") {
+        if (!state.clipboardStyle || state.clipboardStyle.length === 0) return;
+        const newEls = state.clipboardStyle.map(el => ({
+          ...JSON.parse(JSON.stringify(el)),
+          id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+          x: el.x !== undefined ? el.x + 20 : el.x,
+          y: el.y !== undefined ? el.y + 20 : el.y,
+          points: (el.points || []).map(p => ({ x: p.x + 20, y: p.y + 20 }))
+        }));
+        state.strokes.push(...newEls);
+        state.selectedIds = newEls.map(e => e.id);
       } else if (action === "delete") {
         state.strokes = state.strokes.filter(s => !state.selectedIds.includes(s.id));
         state.selectedIds = [];
@@ -294,13 +318,13 @@ const Canvas = forwardRef(({
     ctx.save();
     ctx.translate(canvas.width / 2 + state.panX, canvas.height / 2 + state.panY);
     ctx.scale(state.zoom, state.zoom);
-    ctx.translate(-10000, -10000);
+    ctx.translate(-WORLD_ORIGIN, -WORLD_ORIGIN);
 
     if (state.zoom >= 0.22) {
-      const rawVisLeft  = -(canvas.width / 2 + state.panX) / state.zoom + 10000;
-      const rawVisTop   = -(canvas.height / 2 + state.panY) / state.zoom + 10000;
-      const rawVisRight = (canvas.width / 2 - state.panX) / state.zoom + 10000;
-      const rawVisBottom = (canvas.height / 2 - state.panY) / state.zoom + 10000;
+      const rawVisLeft  = -(canvas.width / 2 + state.panX) / state.zoom + WORLD_ORIGIN;
+      const rawVisTop   = -(canvas.height / 2 + state.panY) / state.zoom + WORLD_ORIGIN;
+      const rawVisRight = (canvas.width / 2 - state.panX) / state.zoom + WORLD_ORIGIN;
+      const rawVisBottom = (canvas.height / 2 - state.panY) / state.zoom + WORLD_ORIGIN;
 
       const visLeft  = Math.max(0, Math.min(20000, rawVisLeft));
       const visTop   = Math.max(0, Math.min(20000, rawVisTop));
@@ -426,9 +450,15 @@ const Canvas = forwardRef(({
       const mx = canvasX - canvas.width / 2;
       const my = canvasY - canvas.height / 2;
 
-      const x = (mx - state.panX) / state.zoom + 10000;
-      const y = (my - state.panY) / state.zoom + 10000;
-      return { x, y };
+      return screenToWorld({
+        x: canvasX,
+        y: canvasY,
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+        panX: state.panX,
+        panY: state.panY,
+        zoom: state.zoom
+      });
     };
 
     const handlePointerDown = (e) => {
@@ -454,6 +484,11 @@ const Canvas = forwardRef(({
           if (handle) {
             if (handle === "rotate") {
               state.isRotating = true;
+              state.rotationPointerAngle = null;
+              state.rotationCenter = {
+                x: (bbox.minX + bbox.maxX) / 2,
+                y: (bbox.minY + bbox.maxY) / 2
+              };
             } else {
               state.isResizing = true;
               state.activeHandle = handle;
@@ -581,6 +616,18 @@ const Canvas = forwardRef(({
         return;
       }
 
+      if (state.isResizing && state.selectedIds.length > 0) {
+        resizeSelectedElements(state, globalPos, state.activeHandle);
+        drawCanvas();
+        return;
+      }
+
+      if (state.isRotating && state.selectedIds.length > 0) {
+        rotateSelectedElements(state, globalPos);
+        drawCanvas();
+        return;
+      }
+
       if (activeTool === "eraser") {
         state.lastPointerPos = globalPos;
         if (state.isDrawing) {
@@ -685,10 +732,17 @@ const Canvas = forwardRef(({
         if (onDrawFinishedRef.current) onDrawFinishedRef.current();
       }
 
+      if (state.isDraggingElement || state.isResizing || state.isRotating) {
+        if (onDrawFinishedRef.current) onDrawFinishedRef.current();
+      }
+
       state.isPanning = false;
       state.isDraggingElement = false;
       state.isResizing = false;
       state.isRotating = false;
+      state.activeHandle = null;
+      state.rotationPointerAngle = null;
+      state.rotationCenter = null;
     };
 
     const handleWheel = (e) => {
@@ -807,6 +861,12 @@ const renderSingleElement = (ctx, el, inkColor, paperColor) => {
   const h = el.height || 0;
   const x = el.x || 0;
   const y = el.y || 0;
+
+  if (el.rotation) {
+    ctx.translate(x + w / 2, y + h / 2);
+    ctx.rotate(el.rotation);
+    ctx.translate(-(x + w / 2), -(y + h / 2));
+  }
 
   ctx.lineWidth = el.strokeWidth || 3;
   ctx.strokeStyle = el.elementType === "eraser" ? paperColor : sColor;
@@ -981,6 +1041,74 @@ const hitTestHandles = (pos, bbox) => {
     sw: { x: minX - 4, y: maxY + 4 },
     w: { x: minX - 4, y: (minY + maxY) / 2 },
     rotate: { x: (minX + maxX) / 2, y: minY - 20 }
+  };
+
+  const resizeSelectedElements = (state, pointer, handle) => {
+    const selected = state.strokes.filter(el => state.selectedIds.includes(el.id));
+    const oldBox = getBoundingBox(selected);
+    const anchorX = handle.includes("w") ? oldBox.maxX : handle.includes("e") ? oldBox.minX : (oldBox.minX + oldBox.maxX) / 2;
+    const anchorY = handle.includes("n") ? oldBox.maxY : handle.includes("s") ? oldBox.minY : (oldBox.minY + oldBox.maxY) / 2;
+    const nextLeft = handle.includes("w") ? pointer.x : handle.includes("e") ? oldBox.minX : oldBox.minX;
+    const nextRight = handle.includes("e") ? pointer.x : handle.includes("w") ? oldBox.maxX : oldBox.maxX;
+    const nextTop = handle.includes("n") ? pointer.y : handle.includes("s") ? oldBox.minY : oldBox.minY;
+    const nextBottom = handle.includes("s") ? pointer.y : handle.includes("n") ? oldBox.maxY : oldBox.maxY;
+    const oldWidth = Math.max(1, oldBox.maxX - oldBox.minX);
+    const oldHeight = Math.max(1, oldBox.maxY - oldBox.minY);
+    const newWidth = Math.max(1, Math.abs(nextRight - nextLeft));
+    const newHeight = Math.max(1, Math.abs(nextBottom - nextTop));
+    const scaleX = newWidth / oldWidth;
+    const scaleY = newHeight / oldHeight;
+    const left = Math.min(nextLeft, nextRight);
+    const top = Math.min(nextTop, nextBottom);
+
+    selected.forEach(el => {
+      if (el.points?.length) {
+        el.points = el.points.map(point => ({
+          x: left + (point.x - oldBox.minX) * scaleX,
+          y: top + (point.y - oldBox.minY) * scaleY
+        }));
+      } else {
+        const x = el.x || 0;
+        const y = el.y || 0;
+        el.x = left + (x - oldBox.minX) * scaleX;
+        el.y = top + (y - oldBox.minY) * scaleY;
+        el.width = (el.width || 0) * scaleX;
+        el.height = (el.height || 0) * scaleY;
+      }
+    });
+  };
+
+  const rotateSelectedElements = (state, pointer) => {
+    const selected = state.strokes.filter(el => state.selectedIds.includes(el.id));
+    const bbox = getBoundingBox(selected);
+    const center = state.rotationCenter || { x: (bbox.minX + bbox.maxX) / 2, y: (bbox.minY + bbox.maxY) / 2 };
+    const previousAngle = state.rotationPointerAngle ?? Math.atan2(state.dragStartPos.y - center.y, state.dragStartPos.x - center.x);
+    const nextAngle = Math.atan2(pointer.y - center.y, pointer.x - center.x);
+    const delta = nextAngle - previousAngle;
+    state.rotationPointerAngle = nextAngle;
+
+    selected.forEach(el => {
+      if (el.points?.length) {
+        el.points = el.points.map(point => rotatePoint(point, center, delta));
+      } else {
+        const elementCenter = { x: (el.x || 0) + (el.width || 0) / 2, y: (el.y || 0) + (el.height || 0) / 2 };
+        const rotatedCenter = rotatePoint(elementCenter, center, delta);
+        el.x = rotatedCenter.x - (el.width || 0) / 2;
+        el.y = rotatedCenter.y - (el.height || 0) / 2;
+        el.rotation = (el.rotation || 0) + delta;
+      }
+    });
+  };
+
+  const rotatePoint = (point, center, angle) => {
+    const dx = point.x - center.x;
+    const dy = point.y - center.y;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    return {
+      x: center.x + dx * cos - dy * sin,
+      y: center.y + dx * sin + dy * cos
+    };
   };
 
   for (const [key, h] of Object.entries(handles)) {
@@ -1447,45 +1575,140 @@ const convertPlotCommandToStrokes = (cmd, inkColor) => {
     });
   }
 
-  // 5. Evaluate and Sample Mathematical Function Curve over 150 points
-  const steps = 150;
-  let currentSegment = [];
+  // 5. Axis labels
+  const labelStyle = {
+    strokeColor: axisColor,
+    strokeWidth: 1,
+    strokeStyle: "solid",
+    opacity: 90,
+    fontSize: 16,
+    fontWeight: 700,
+    lineHeight: 1.2
+  };
 
-  for (let i = 0; i <= steps; i++) {
-    const xm = xMin + (i / steps) * (xMax - xMin);
-    const res = evaluateMathExpression(cleanExpr, xm);
+  strokes.push({
+    id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_xlabel`,
+    elementType: "text",
+    x: x + w - 18,
+    y: originCanvas.y + 8,
+    width: 24,
+    height: 22,
+    text: "x",
+    ...labelStyle
+  });
 
-    if (res && res.ok && typeof res.value === "number" && !isNaN(res.value) && isFinite(res.value) && res.value >= yMin && res.value <= yMax) {
-      const pt = toCanvasCoords(xm, res.value);
-      currentSegment.push(pt);
-    } else {
-      // Discontinuity, asymptote, or out-of-range -> flush current curve segment
-      if (currentSegment.length >= 2) {
-        strokes.push({
-          id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_curve_${strokes.length}`,
-          elementType: "pen",
-          points: [...currentSegment],
-          strokeColor: inkColor,
-          strokeWidth: 3,
-          strokeStyle: "solid",
-          opacity: 100
-        });
-      }
-      currentSegment = [];
+  strokes.push({
+    id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_ylabel`,
+    elementType: "text",
+    x: originCanvas.x + 8,
+    y: y + 6,
+    width: 24,
+    height: 22,
+    text: "y",
+    ...labelStyle
+  });
+
+  // 6. Adaptively sample the function curve. Midpoint subdivision adds points
+  // where the curve bends and stops segments at discontinuities/asymptotes.
+  const MIN_INTERVAL = (xMax - xMin) / 4096;
+  const MAX_DEPTH = 10;
+  const FLATNESS_TOLERANCE = Math.max(0.75, Math.min(w, h) / 500);
+  const MAX_POINTS = 2500;
+  let generatedPoints = 0;
+
+  const evaluatePoint = (xm) => {
+    const result = evaluateMathExpression(cleanExpr, xm);
+    if (
+      !result ||
+      !result.ok ||
+      typeof result.value !== "number" ||
+      !Number.isFinite(result.value) ||
+      result.value < yMin ||
+      result.value > yMax
+    ) {
+      return null;
     }
+    return { x: xm, y: result.value, canvas: toCanvasCoords(xm, result.value) };
+  };
+
+  const distanceFromChord = (point, start, end) => {
+    const dx = end.canvas.x - start.canvas.x;
+    const dy = end.canvas.y - start.canvas.y;
+    const length = Math.hypot(dx, dy);
+    if (length === 0) return Math.hypot(point.canvas.x - start.canvas.x, point.canvas.y - start.canvas.y);
+    return Math.abs(
+      dy * point.canvas.x -
+      dx * point.canvas.y +
+      end.canvas.x * start.canvas.y -
+      end.canvas.y * start.canvas.x
+    ) / length;
+  };
+
+  const subdivide = (start, end, depth) => {
+    if (generatedPoints >= MAX_POINTS) return [];
+
+    const midpointX = (start.x + end.x) / 2;
+    const midpoint = evaluatePoint(midpointX);
+    const intervalWidth = end.x - start.x;
+
+    if (depth >= MAX_DEPTH || intervalWidth <= MIN_INTERVAL) {
+      if (start && end && midpoint && distanceFromChord(midpoint, start, end) <= FLATNESS_TOLERANCE) {
+        generatedPoints += 2;
+        return [[start.canvas, end.canvas]];
+      }
+      return [];
+    }
+
+    if (start && end && midpoint) {
+      const deviation = distanceFromChord(midpoint, start, end);
+
+      if (deviation <= FLATNESS_TOLERANCE) {
+        generatedPoints += 2;
+        return [[start.canvas, end.canvas]];
+      }
+    }
+
+    const leftStart = start;
+    const leftEnd = midpoint;
+    const rightStart = midpoint;
+    const rightEnd = end;
+    const leftSegments = leftStart && leftEnd ? subdivide(leftStart, leftEnd, depth + 1) : [];
+    const rightSegments = rightStart && rightEnd ? subdivide(rightStart, rightEnd, depth + 1) : [];
+    return [...leftSegments, ...rightSegments];
+  };
+
+  const mergeSegments = (segments) => {
+    const merged = [];
+    segments.forEach(([start, end]) => {
+      const previous = merged[merged.length - 1];
+      if (previous && Math.hypot(previous[previous.length - 1].x - start.x, previous[previous.length - 1].y - start.y) < 0.01) {
+        previous.push(end);
+      } else {
+        merged.push([start, end]);
+      }
+    });
+    return merged;
+  };
+
+  const initialSteps = 32;
+  const adaptiveSegments = [];
+  for (let i = 0; i < initialSteps; i++) {
+    const start = evaluatePoint(xMin + (i / initialSteps) * (xMax - xMin));
+    const end = evaluatePoint(xMin + ((i + 1) / initialSteps) * (xMax - xMin));
+    if (start && end) adaptiveSegments.push(...subdivide(start, end, 0));
   }
 
-  if (currentSegment.length >= 2) {
+  mergeSegments(adaptiveSegments).forEach(points => {
     strokes.push({
       id: `el_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_curve_${strokes.length}`,
       elementType: "pen",
-      points: currentSegment,
+      points,
       strokeColor: inkColor,
       strokeWidth: 3,
       strokeStyle: "solid",
       opacity: 100
     });
-  }
+  });
 
   return strokes;
 };

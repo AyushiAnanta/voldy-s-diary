@@ -30,6 +30,7 @@ import {
   normalizeReasoningLevel,
   normalizeTheme
 } from "./utils/storage.js";
+import { WORLD_ORIGIN } from "./utils/coordinates.js";
 
 const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -47,6 +48,8 @@ export default function App() {
   const canvasRef = useRef(null);
   const autoTriggerTimer = useRef(null);
   const autoSaveTimerRef = useRef(null);
+  const saveQueueRef = useRef(Promise.resolve());
+  const aiRequestRef = useRef(null);
   const statusRef = useRef("ready");
   const isLoadedRef = useRef(false);
   
@@ -90,6 +93,9 @@ export default function App() {
       if (errorTimeoutRef.current) {
         clearTimeout(errorTimeoutRef.current);
       }
+      if (autoTriggerTimer.current) clearTimeout(autoTriggerTimer.current);
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      if (aiRequestRef.current) aiRequestRef.current.abort();
     };
   }, []);
 
@@ -106,6 +112,8 @@ export default function App() {
   
   const [viewport, setViewport] = useState({ panX: 0, panY: 0, zoom: 1.0 });
   const [drafts, setDrafts] = useState([]);
+  const latestStateRef = useRef({ theme, activeTool, reasoning, isAiEnabled, drafts, viewport });
+  latestStateRef.current = { theme, activeTool, reasoning, isAiEnabled, drafts, viewport };
 
   useEffect(() => {
     async function restoreSession() {
@@ -152,17 +160,28 @@ export default function App() {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
 
     autoSaveTimerRef.current = setTimeout(async () => {
-      const canvasData = canvasRef.current.getCanvasState();
-      const res = await saveSessionState({
-        strokes: canvasData.strokes,
-        viewport: canvasData.viewport,
-        drafts: drafts,
-        settings: { theme, activeTool, reasoning, isAiEnabled }
-      });
+      saveQueueRef.current = saveQueueRef.current
+        .catch(() => {})
+        .then(async () => {
+          const canvasData = canvasRef.current?.getCanvasState();
+          if (!canvasData) return;
+          const latest = latestStateRef.current;
+          const res = await saveSessionState({
+            strokes: canvasData.strokes,
+            viewport: canvasData.viewport,
+            drafts: latest.drafts,
+            settings: {
+              theme: latest.theme,
+              activeTool: latest.activeTool,
+              reasoning: latest.reasoning,
+              isAiEnabled: latest.isAiEnabled
+            }
+          });
 
-      if (res && res.prunedStrokes) {
-        showError("Storage space critical: Oldest stroke history was compacted to preserve current session.");
-      }
+          if (res && res.prunedStrokes) {
+            showError("Storage space critical: Oldest stroke history was compacted to preserve current session.");
+          }
+        });
     }, 600);
   };
 
@@ -218,6 +237,9 @@ export default function App() {
     }
 
     setStatus("observing");
+    if (aiRequestRef.current) aiRequestRef.current.abort();
+    const controller = new AbortController();
+    aiRequestRef.current = controller;
 
     let customPromptText = "Analyze the handwriting/drawings in the visual crop and provide responses/continuations.";
     if (mode === "hint") {
@@ -240,6 +262,7 @@ export default function App() {
       const response = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/canvas-ai`, { 
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           image: cropData.image,
           cropX: cropData.cropX,
@@ -299,6 +322,7 @@ export default function App() {
       setStatus("ready");
 
     } catch (error) {
+      if (error.name === "AbortError") return;
       console.error("Gemini AI request failed:", error);
       showError(`AI Error: ${error.message}`);
       setStatus("ready");
@@ -311,9 +335,23 @@ export default function App() {
 
   const executeClear = async () => {
     setConfirmClear(false);
+    setStatus("ready");
+    if (autoTriggerTimer.current) {
+      clearTimeout(autoTriggerTimer.current);
+      autoTriggerTimer.current = null;
+    }
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    if (aiRequestRef.current) {
+      aiRequestRef.current.abort();
+      aiRequestRef.current = null;
+    }
     canvasRef.current.clearCanvas();
     setDrafts([]);
     setSelectedElements([]);
+    await saveQueueRef.current.catch(() => {});
     await clearSessionState();
   };
 
@@ -478,7 +516,7 @@ export default function App() {
         onZoomChange={(newZoom) => {
           setViewport(prev => ({ ...prev, zoom: newZoom }));
           if (canvasRef.current) {
-            canvasRef.current.loadCanvasState(undefined, { ...viewport, zoom: newZoom });
+            canvasRef.current.setViewport({ zoom: newZoom });
           }
         }}
         onReset={() => {
@@ -625,8 +663,8 @@ export default function App() {
             className={`draft-item ${draft.accepted ? "accepted" : ""}`}
             style={{
               position: "absolute",
-              left: `${draft.x - 10000}px`,
-              top: `${draft.y - 10000}px`,
+              left: `${draft.x - WORLD_ORIGIN}px`,
+              top: `${draft.y - WORLD_ORIGIN}px`,
               width: `${draft.width}px`,
               pointerEvents: draft.accepted ? "none" : "auto"
             }}
